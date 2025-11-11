@@ -1,20 +1,19 @@
 {
+  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "target": "ES2022",
+    "outDir": "./dist/bot",
+    "rootDir": "./src/bot",
     "module": "ES2022",
+    "target": "ES2022",
     "lib": ["ES2022", "DOM"],
-    "moduleResolution": "node",
-    "outDir": "./dist",
-    "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",
     "resolveJsonModule": true,
     "declaration": true,
-    "declarationMap": true,
     "sourceMap": true,
-    "types": ["node"]
+    "types": ["node", "playwright"]
   },
-  "include": ["src/**/*", "lib/**/*", "bin/**/*"],
+  "include": ["src/bot/**/*"],
   "exclude": ["node_modules", "dist", "cdk.out"]
 }

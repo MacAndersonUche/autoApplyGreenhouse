@@ -1,48 +1,11 @@
-# Dependencies
 node_modules/
-
-# Environment variables
-.env
-
-# Personal files
-resume.pdf
-cover-letter.txt
-
-# Logs
+dist/
+netlify/functions/dist/
+.browser-context/
 *.log
-npm-debug.log*
-
-# OS files
+.env
 .DS_Store
-Thumbs.db
-
-# IDE
+coverage/
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# TypeScript
-dist/
-*.tsbuildinfo
-packages/*/dist/
-
-# Browser context (contains session data)
 .browser-context
-packages/*/.browser-context
-
-# Failed applications and submissions tracking
-failed-submissions.json
-failed-applications.json
-
-# Lambda package
-packages/lambda/function.zip
-packages/lambda/node_modules/
-
-# CDK
-packages/lambda/cdk.out/
-packages/lambda/cdk.context.json
-
-# Config (if contains sensitive data)
-# config.json
-

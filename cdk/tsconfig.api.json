@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist/api",
+    "rootDir": "./src/api",
+    "module": "ES2022",
+    "target": "ES2022",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "declaration": true,
+    "sourceMap": true,
+    "types": ["node", "aws-lambda"]
+  },
+  "include": ["src/api/**/*"],
+  "exclude": ["node_modules", "dist", "cdk.out"]
+}
+

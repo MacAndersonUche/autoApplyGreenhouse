@@ -1,0 +1,60 @@
+{
+  "totalFailed": 9,
+  "applications": [
+    {
+      "jobTitle": "Software Engineer",
+      "url": "https://www.abclegal.com/job-openings/job?id=7524762003&gh_jid=7524762003&gh_src=my.greenhouse.search#grnhse_app",
+      "timestamp": "2025-11-11T16:06:49.214Z",
+      "reason": "Application process exceeded 30 seconds before finding apply button"
+    },
+    {
+      "jobTitle": "Software Engineer - FOS",
+      "url": "https://www.cannondesign.com/careers/software-engineer-fos-2/apply?gh_jid=8282933002&gh_src=my.greenhouse.search",
+      "timestamp": "2025-11-11T16:11:54.527Z",
+      "reason": "Application process exceeded 30 seconds (32s) - elementHandle.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    55 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not visible\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "jobTitle": "Sr. Software Engineer - FOS",
+      "url": "https://www.cannondesign.com/careers/sr-software-engineer-fos-2/apply?gh_jid=8281475002&gh_src=my.greenhouse.search",
+      "timestamp": "2025-11-11T16:16:08.540Z",
+      "reason": "Application process exceeded 30 seconds (32s) - elementHandle.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    56 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not visible\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "jobTitle": "Staff Software Engineer - MetaMask (Ramps)",
+      "url": "https://consensys.io/open-roles/7376908?gh_jid=7376908&gh_src=my.greenhouse.search",
+      "timestamp": "2025-11-11T16:26:25.890Z",
+      "reason": "Application process exceeded 30 seconds before finding apply button"
+    },
+    {
+      "jobTitle": "Senior Software Engineer - Windows Kernel (Identity)",
+      "url": "https://www.sentinelone.com/jobs/?gh_jid=7520657003&gh_src=my.greenhouse.search#grnhse_app",
+      "timestamp": "2025-11-11T16:27:22.815Z",
+      "reason": "Application process exceeded 30 seconds before finding apply button"
+    },
+    {
+      "jobTitle": "Software Engineer - Python and vue js (Remote)",
+      "url": "https://www.monks.com/careers/5700254004/job?gh_jid=5700254004&gh_src=my.greenhouse.search",
+      "timestamp": "2025-11-11T16:28:28.464Z",
+      "reason": "Application process exceeded 30 seconds (45s) - elementHandle.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    56 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not visible\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "jobTitle": "Software Engineer - Python and vue js (Remote)",
+      "url": "https://www.monks.com/careers/5703090004/job?gh_jid=5703090004&gh_src=my.greenhouse.search",
+      "timestamp": "2025-11-11T16:29:31.466Z",
+      "reason": "Application process exceeded 30 seconds (45s) - elementHandle.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    56 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not visible\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "jobTitle": "Software Engineer - Python and vue js (Remote)",
+      "url": "https://www.monks.com/careers/5703831004/job?gh_jid=5703831004&gh_src=my.greenhouse.search",
+      "timestamp": "2025-11-11T16:30:35.102Z",
+      "reason": "Application process exceeded 30 seconds (45s) - elementHandle.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    56 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not visible\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "jobTitle": "Senior Software Engineer II, Backend - Customer Journey Product Line",
+      "url": "https://www.hubspot.com/careers/jobs/7388221?gh_jid=7388221&gh_src=my.greenhouse.search",
+      "timestamp": "2025-11-11T16:42:16.312Z",
+      "reason": "Application process exceeded 30 seconds before finding apply button"
+    }
+  ],
+  "lastUpdated": "2025-11-11T16:42:26.318Z"
+}

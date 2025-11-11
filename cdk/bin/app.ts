@@ -1,18 +1,14 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
-import * as cdk from 'aws-cdk-lib';
-import { GreenhouseBotStack } from '../lib/greenhouse-bot-stack';
+import { App } from 'aws-cdk-lib';
+import { ApiStack } from '../lib/api-stack';
 
-const app = new cdk.App();
+const app = new App();
 
-new GreenhouseBotStack(app, 'GreenhouseBotStack', {
+new ApiStack(app, 'GreenhouseBotApiStack', {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
   },
   openaiApiKey: process.env.OPENAI_API_KEY,
-  jobsSearchUrlOneDay: 'https://my.greenhouse.io/jobs?query=software%20engineer%20&date_posted=past_day&work_type[]=remote',
-  scheduleExpression: 'cron(0 9 * * ? *)',
-  timeout: 900,
-  memorySize: 2048,
 });

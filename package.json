@@ -1,23 +1,20 @@
 {
   "name": "greenhouse-auto-apply-monorepo",
   "version": "1.0.0",
-  "description": "Monorepo for Greenhouse auto-apply bot with CLI and Lambda packages",
+  "description": "Monorepo for Greenhouse auto-apply bot",
   "private": true,
   "workspaces": [
-    "cdk/*"
+    "cdk",
+    "frontend"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "build:lambda": "npm run build --workspace=@greenhouse-bot/lambda",
-    "start": "npm run",
-    "dev": "npm run:dev",
-    "test:job": "tsx src/test.ts",
-    "test": "tsx src/test.ts",
-    "restart": "tsx src/restart.ts",
-    "playwright:install": "playwright install chromium",
-    "install:all": "npm install && npm run build:lambda",
-    "run": "tsc && node dist/index.js",
-    "run:dev": "tsx src/index.ts"
+    "dev:backend": "npm run dev --workspace=cdk",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "run": "npm run run --workspace=cdk",
+    "start": "npm run start --workspace=cdk",
+    "test": "npm run test --workspace=cdk",
+    "playwright:install": "npm run playwright:install --workspace=cdk"
   },
   "keywords": [
     "greenhouse",
@@ -30,14 +27,6 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^20.10.0",
-    "tsx": "^4.7.0",
-    "typescript": "^5.3.0"
-  },
-  "dependencies": {
-    "@aws-sdk/client-sqs": "^3.928.0",
-    "dotenv": "^16.3.1",
-    "openai": "^4.104.0",
-    "playwright": "^1.40.0"
+    "@types/aws-lambda": "^8.10.157"
   }
 }

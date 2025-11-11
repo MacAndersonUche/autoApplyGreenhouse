@@ -1,118 +1,115 @@
 # Greenhouse Auto-Apply Bot Monorepo
 
-A monorepo containing CLI and Lambda packages for automatically applying to Greenhouse jobs.
+Monorepo for Greenhouse auto-apply bot with CDK backend (API Gateway + Lambda) and Vite frontend.
 
 ## Structure
 
 ```
 .
-├── packages/
-│   └── lambda/        # AWS Lambda function (headless, EventBridge cron)
-├── src/               # Main bot logic (used by CLI and Lambda)
-│   ├── index.ts       # GreenhouseAutoApplyBot class
-│   ├── test.ts        # Test script for single job URL
-│   └── restart.ts     # Restart script for failed jobs
-├── config.json        # Configuration file
-├── src/cv.html        # Resume HTML file
-└── package.json       # Root package.json with workspaces
+├── cdk/                    # Backend package (CDK infrastructure)
+│   ├── src/
+│   │   ├── bot/           # Bot source code (index.ts, test.ts, cv.html)
+│   │   └── api/           # Lambda handlers (run-bot.ts, failed-jobs.ts)
+│   ├── lib/               # CDK stacks
+│   └── bin/               # CDK app entry point
+├── frontend/              # Frontend package (Vite)
+│   └── src/               # Frontend source
+└── package.json           # Root workspace config
 ```
-
-## Packages
-
-### src/ (Main Bot Logic)
-Contains the `GreenhouseAutoApplyBot` class used by both CLI and Lambda. The bot logic is in `src/index.ts`.
-
-**CLI Usage:**
-```bash
-npm run start          # Run the bot
-npm run test:job <url> # Test applying to a specific job URL
-npm run restart        # Retry failed applications
-```
-
-### @greenhouse-bot/lambda
-AWS Lambda function that runs the bot in headless mode. Designed to be triggered by EventBridge cron. Uses `JOBS_SEARCH_URL_ONE_DAY` from environment variables. Imports bot logic directly from `src/`.
-
-**Environment Variables:**
-- `JOBS_SEARCH_URL_ONE_DAY`: URL for jobs posted in the past day
-- `OPENAI_API_KEY`: OpenAI API key for text field auto-fill
-- `RESUME_PATH`: Path to resume HTML file (default: `/opt/resume/cv.html`)
 
 ## Setup
 
-1. Install dependencies:
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Install Playwright browsers:**
+   ```bash
+   npm run playwright:install
+   ```
+
+3. **Build:**
+   ```bash
+   npm run build
+   ```
+
+## Local Development
+
+### Backend (CDK)
+
 ```bash
-npm install
-```
-
-2. Install Playwright browsers:
-```bash
-npm run playwright:install
-```
-
-3. Configure environment variables in `.env`:
-```env
-OPENAI_API_KEY=your_key_here
-JOBS_SEARCH_URL=https://my.greenhouse.io/jobs?query=engineer&date_posted=past_five_days&work_type[]=remote
-JOBS_SEARCH_URL_ONE_DAY=https://my.greenhouse.io/jobs?query=engineer&date_posted=past_day&work_type[]=remote
-```
-
-4. Build all packages:
-```bash
-npm run build
-```
-
-## Usage
-
-### CLI
-```bash
+# Run bot locally (from root)
 npm run start
+# or
+npm run run
+
+# Or from cdk directory
+cd cdk
+npm run start
+# or
+npm run run
+# or
+npm run dev
+
+# Test with specific URL
+npm run test <job-url>
+
+# Test retry failed jobs
+npm run test
 ```
 
-### Lambda Deployment
+### Frontend
 
-#### Option 1: GitHub Actions (Recommended)
-
-1. Configure GitHub Secrets (see `.github/DEPLOYMENT.md`)
-2. Push to `main` branch or manually trigger workflow
-3. Deployment happens automatically via GitHub Actions
-
-#### Option 2: Manual CDK Deployment
-
-1. Build the lambda package:
 ```bash
-npm run build:lambda
-cd packages/lambda
-npm install
-npm run cdk:bootstrap  # First time only
+# Start Vite dev server
+npm run dev:frontend
+```
+
+## Deploy to AWS
+
+```bash
+cd cdk
+npm run build
 npm run cdk:deploy
 ```
 
-2. Set environment variables:
-```bash
-export OPENAI_API_KEY=your_key
-export AWS_ACCOUNT_ID=your_account_id
-export AWS_REGION=us-east-1
-npm run cdk:deploy
+The stack creates:
+- API Gateway with REST API
+- Lambda functions for `/api/run-bot` and `/api/failed-jobs`
+- S3 bucket for storing failed jobs
+- CloudWatch logs
+
+After deployment, update frontend `.env`:
+```
+VITE_API_URL=https://your-api-id.execute-api.region.amazonaws.com/prod
 ```
 
-#### Option 3: Manual Lambda Package
+## Browser Context Setup
 
-1. Build the lambda package:
-```bash
-npm run build:lambda
-cd packages/lambda
-npm run package
-```
+The bot uses a saved browser context (`.browser-context` file) for authentication. 
 
-2. Upload `function.zip` to AWS Lambda
-3. Configure EventBridge rule to trigger the Lambda on a schedule
-4. Set environment variables in Lambda configuration
+**First-time setup:**
+1. Run the bot: `npm run start`
+2. A browser window will open
+3. Manually login to Greenhouse in the browser
+4. The session will be automatically saved to `.browser-context`
+5. Future runs will use this saved session automatically
 
-## Features
+**Note:** The `.browser-context` file contains your session cookies and should be kept secure.
 
-- Automatic job search and application
-- Session persistence (saves login state)
-- OpenAI integration for intelligent form filling
-- Work authorization handling (British citizen, requires US sponsorship)
-- Failed submission tracking
-- Headless and non-headless modes
+## Environment Variables
+
+Set in `.env` file or AWS Lambda environment:
+
+**Optional:**
+- `OPENAI_API_KEY` - For AI form filling
+- `RESUME_PATH` - Path to resume file (default: `./cv.html`)
+- `MAX_APPLICATIONS` - Max apps per run (default: 10)
+- `DELAY_MS` - Delay between apps (default: 20000)
+- `JOBS_SEARCH_URL` - Search URL for jobs
+
+## Workspaces
+
+- `cdk` - Backend with CDK infrastructure
+- `frontend` - Vite frontend application

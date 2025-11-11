@@ -11,28 +11,6 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
-interface PersonalInfo {
-  email: string;
-  phone: string;
-}
-
-interface JobFilters {
-  keywords: string[];
-  departments: string[];
-  locations: string[];
-}
-
-interface ApplicationSettings {
-  autoApply: boolean;
-  delayBetweenApplications: number;
-  maxApplicationsPerRun: number;
-}
-
-interface Config {
-  personalInfo: PersonalInfo;
-  jobFilters: JobFilters;
-  applicationSettings: ApplicationSettings;
-}
 
 interface Job {
   href: string;
@@ -47,7 +25,6 @@ export class GreenhouseAutoApplyBot {
   private baseURL = 'https://my.greenhouse.io';
   private resumePath: string;
   private coverLetterPath: string;
-  private config: Config;
   private contextPath: string;
   private openai: OpenAI | null = null;
   private failedSubmissions: Array<{ jobTitle: string; url: string; timestamp: string; reason: string }> = [];
@@ -56,9 +33,9 @@ export class GreenhouseAutoApplyBot {
   constructor() {
     this.resumePath = process.env.RESUME_PATH || path.join(__dirname, 'cv.html');
     this.coverLetterPath = process.env.COVER_LETTER_PATH || './cover-letter.txt';
-    this.config = this.loadConfig();
-    // Store browser context in a local directory
-    this.contextPath = path.join(__dirname, '../.browser-context');
+    // Use existing .browser-context file in project root (hardcoded)
+    // This file contains the saved browser session with cookies and authentication
+    this.contextPath = path.resolve(process.cwd(), '.browser-context');
     
     // Initialize OpenAI if API key is provided
     // API key must be set in .env file as OPENAI_API_KEY
@@ -73,60 +50,22 @@ export class GreenhouseAutoApplyBot {
     }
   }
 
-  private loadConfig(): Config {
-    try {
-      const configPath = path.join(__dirname, '../config.json');
-      const configData = fsSync.readFileSync(configPath, 'utf8');
-      return JSON.parse(configData);
-    } catch (error) {
-      console.warn('Config file not found, using defaults');
-      return {
-        personalInfo: {
-          email: process.env.EMAIL || 'hi@macandersonuche.dev',
-          phone: process.env.PHONE || '',
-        },
-        jobFilters: {
-          keywords: process.env.JOB_KEYWORDS
-            ? process.env.JOB_KEYWORDS.split(',')
-            : ['engineer', 'engineering'],
-          departments: process.env.DEPARTMENTS
-            ? process.env.DEPARTMENTS.split(',')
-            : [],
-          locations: process.env.LOCATIONS
-            ? process.env.LOCATIONS.split(',')
-            : ['remote', 'fully remote'],
-        },
-        applicationSettings: {
-          autoApply: true, // Always enabled
-          delayBetweenApplications: parseInt(
-            process.env.DELAY_MS || '20000',
-            10
-          ),
-          maxApplicationsPerRun: parseInt(
-            process.env.MAX_APPLICATIONS || '10',
-            10
-          ),
-        },
-      };
-    }
-  }
 
   async initializeBrowser(): Promise<void> {
     console.log('🌐 Launching browser...');
     
-    // Check if we have a saved context
+    // Check if we have a saved browser context
     const hasSavedContext = fsSync.existsSync(this.contextPath);
     
     if (hasSavedContext) {
-      console.log('📦 Found saved session, attempting to restore...');
+      console.log('📦 Found saved browser context, attempting to restore...');
       try {
-        // Launch browser
+        // Launch browser in headless mode
         this.browser = await chromium.launch({
-          headless: false,
-          slowMo: 500,
+          headless: true,
         });
         
-        // Try to load saved context
+        // Load saved browser context (includes cookies, localStorage, etc.)
         this.context = await this.browser.newContext({
           storageState: this.contextPath,
         });
@@ -139,46 +78,41 @@ export class GreenhouseAutoApplyBot {
             // Verify session is still valid
             const isValid = await this.verifySession();
             if (isValid) {
-              console.log('✅ Session restored successfully!');
+              console.log('✅ Browser context restored successfully!');
               return;
             } else {
-              console.log('⚠️  Saved session expired, will need to login again');
+              console.log('⚠️  Saved browser context expired or invalid');
               await this.page.close();
               if (this.context) {
                 await this.context.close();
               }
               this.context = null;
               this.page = null;
-              // Continue to create new context below
+              if (this.browser) {
+                await this.browser.close();
+                this.browser = null;
+              }
+              // Will throw error below - user needs to manually login again
             }
           }
         }
       } catch (error) {
-        console.log('⚠️  Could not restore session, will create new one');
+        console.error('❌ Could not restore browser context:', error);
         if (this.browser) {
           await this.browser.close();
           this.browser = null;
         }
+        throw new Error(
+          'Failed to load browser context. Please ensure .browser-context file exists and is valid.\n' +
+          'To create a new session, run the bot and manually login once - the session will be saved automatically.'
+        );
       }
-    }
-    
-    // Create new browser context (either no saved session or session expired)
-    if (!this.browser) {
-      this.browser = await chromium.launch({
-        headless: false,
-        slowMo: 500,
-      });
-    }
-    
-    if (!this.context) {
-      this.context = await this.browser.newContext();
-    }
-    
-    if (!this.page && this.context) {
-      this.page = await this.context.newPage();
-      if (this.page) {
-        await this.page.setViewportSize({ width: 1280, height: 720 });
-      }
+    } else {
+      // No saved context found - throw error since we require existing .browser-context
+      throw new Error(
+        '❌ Browser context file (.browser-context) not found at: ' + this.contextPath + '\n' +
+        '   Please ensure the .browser-context file exists in the project root directory.'
+      );
     }
   }
 
@@ -237,7 +171,7 @@ export class GreenhouseAutoApplyBot {
     // Note: Cookie modal will be handled after clicking "View Job" button
 
     // Pre-fill email if available
-    const email = this.config.personalInfo.email || 'hi@macandersonuche.dev';
+    const email = process.env.EMAIL || 'hi@macandersonuche.dev';
     try {
       const emailInput = await this.page.$('input[type="email"], input[name*="email"], input[id*="email"]');
       if (emailInput) {
@@ -365,8 +299,8 @@ export class GreenhouseAutoApplyBot {
                 
                 // Fallback: extract from card text (first line or text before company name)
                 if (!title) {
-                  const lines = cardText.split('\n').map(l => l.trim()).filter(l => l);
-                  title = lines.find(line => /engineer/i.test(line)) || lines[0] || cardText.split('\n')[0].trim();
+                  const lines = cardText.split('\n').map((l: string) => l.trim()).filter((l: string) => l);
+                  title = lines.find((line: string) => /engineer/i.test(line)) || lines[0] || cardText.split('\n')[0].trim();
                 }
                 
                 if (title && /engineer/i.test(title)) {
@@ -388,8 +322,8 @@ export class GreenhouseAutoApplyBot {
                 if (parentElement) {
                   const parentText = await parentElement.textContent();
                   if (parentText && /engineer/i.test(parentText)) {
-                    const lines = parentText.split('\n').filter(l => l.trim());
-                    const title = lines.find(l => /engineer/i.test(l)) || lines[0];
+                    const lines = parentText.split('\n').filter((l: string) => l.trim());
+                    const title = lines.find((l: string) => /engineer/i.test(l)) || lines[0];
                     if (title) {
                       jobElements.push({ title: title.trim(), viewButton: button });
                     }
@@ -2184,32 +2118,34 @@ export class GreenhouseAutoApplyBot {
   }
 
   async saveFailedSubmissions(): Promise<void> {
+    if (this.failedSubmissions.length === 0) return;
+
     try {
-      const failedSubmissionsPath = path.join(__dirname, '..', 'failed-submissions.json');
-      const data = {
-        totalFailed: this.failedSubmissions.length,
-        submissions: this.failedSubmissions,
-        lastUpdated: new Date().toISOString()
-      };
-      await fs.writeFile(failedSubmissionsPath, JSON.stringify(data, null, 2), 'utf8');
-      console.log(`   💾 Saved ${this.failedSubmissions.length} failed submission(s) to failed-submissions.json`);
+      const { storage } = await import('./storage');
+      const jobs = this.failedSubmissions.map(job => ({
+        ...job,
+        type: 'submission' as const,
+      }));
+      await storage.saveBatch(jobs);
+      console.log(`   💾 Saved ${this.failedSubmissions.length} failed submission(s)`);
     } catch (error) {
-      console.warn('   ⚠️  Could not save failed submissions to file:', error);
+      console.warn('   ⚠️  Could not save failed submissions:', error);
     }
   }
 
   async saveFailedApplications(): Promise<void> {
+    if (this.failedApplications.length === 0) return;
+
     try {
-      const failedApplicationsPath = path.join(__dirname, '..', 'failed-applications.json');
-      const data = {
-        totalFailed: this.failedApplications.length,
-        applications: this.failedApplications,
-        lastUpdated: new Date().toISOString()
-      };
-      await fs.writeFile(failedApplicationsPath, JSON.stringify(data, null, 2), 'utf8');
-      console.log(`   💾 Saved ${this.failedApplications.length} failed application(s) to failed-applications.json`);
+      const { storage } = await import('./storage');
+      const jobs = this.failedApplications.map(job => ({
+        ...job,
+        type: 'application' as const,
+      }));
+      await storage.saveBatch(jobs);
+      console.log(`   💾 Saved ${this.failedApplications.length} failed application(s)`);
     } catch (error) {
-      console.warn('   ⚠️  Could not save failed applications to file:', error);
+      console.warn('   ⚠️  Could not save failed applications:', error);
     }
   }
 
@@ -2888,34 +2824,145 @@ Answer with ONLY "yes" or "no".`;
   }
 
 
+  async runWithStats(): Promise<{
+    jobsFound: number;
+    jobsApplied: number;
+    jobsFailed: number;
+    failedJobs: Array<{ jobTitle: string; url: string; timestamp: string; reason: string }>;
+  }> {
+    let jobsFound = 0;
+    let jobsApplied = 0;
+    const allFailedJobs: Array<{ jobTitle: string; url: string; timestamp: string; reason: string }> = [];
+    
+    try {
+      console.log('🚀 Starting Greenhouse Auto-Apply Bot...\n');
+
+      // Initialize browser (will restore session from .browser-context if available)
+      await this.initializeBrowser();
+
+      // Verify session using saved browser context
+      const isAuthenticated = await this.verifySession();
+      
+      if (!isAuthenticated) {
+        throw new Error(
+          '❌ No valid session found. Please:\n' +
+          '   1. Run the bot once and manually login in the browser\n' +
+          '   2. The session will be saved to .browser-context\n' +
+          '   3. Future runs will use the saved session automatically\n' +
+          '\n   Or ensure .browser-context file exists with valid session data.'
+        );
+      }
+      
+      console.log('✅ Using saved browser context, authenticated successfully');
+
+      // Search for jobs
+      const jobs = await this.searchJobs();
+      jobsFound = jobs.length;
+
+      if (jobs.length === 0) {
+        console.log('\n⚠️  No matching jobs found.');
+        return {
+          jobsFound: 0,
+          jobsApplied: 0,
+          jobsFailed: 0,
+          failedJobs: [],
+        };
+      }
+
+      // Display found jobs
+      console.log('\n📋 Found Jobs:');
+      jobs.forEach((job, index) => {
+        console.log(`${index + 1}. ${job.title}`);
+      });
+
+      // Apply to each matching job
+      console.log('\n🎯 Starting auto-apply process...\n');
+      const maxJobs = parseInt(process.env.MAX_APPLICATIONS || '10', 10);
+      const jobsToApply = jobs.slice(0, maxJobs);
+      console.log(`📋 Processing ${jobsToApply.length} jobs (out of ${jobs.length} total found)...`);
+
+      let successCount = 0;
+      for (const job of jobsToApply) {
+        const success = await this.applyToJob(job);
+        if (success) {
+          successCount++;
+        }
+
+        // Delay between applications
+        if (jobsToApply.indexOf(job) < jobsToApply.length - 1) {
+          const delay = parseInt(process.env.DELAY_MS || '20000', 10);
+          console.log(`\n⏳ Waiting ${delay}ms before next application...`);
+          await this.sleep(delay);
+        }
+      }
+
+      jobsApplied = successCount;
+      console.log(`\n✅ Processed ${successCount}/${jobsToApply.length} applications`);
+
+      // Save failed jobs
+      if (this.failedSubmissions.length > 0) {
+        await this.saveFailedSubmissions();
+      }
+      
+      if (this.failedApplications.length > 0) {
+        await this.saveFailedApplications();
+      }
+
+      // Collect all failed jobs
+      allFailedJobs.push(...this.failedSubmissions);
+      allFailedJobs.push(...this.failedApplications);
+
+    } catch (error) {
+      console.error('Fatal error:', error);
+      
+      // Save failed jobs even on error
+      if (this.failedSubmissions.length > 0) {
+        await this.saveFailedSubmissions();
+      }
+      
+      if (this.failedApplications.length > 0) {
+        await this.saveFailedApplications();
+      }
+
+      allFailedJobs.push(...this.failedSubmissions);
+      allFailedJobs.push(...this.failedApplications);
+      
+      throw error;
+    } finally {
+      await this.close();
+    }
+
+    return {
+      jobsFound,
+      jobsApplied,
+      jobsFailed: allFailedJobs.length,
+      failedJobs: allFailedJobs,
+    };
+  }
+
   async run(): Promise<void> {
     console.log('🚀 Starting Greenhouse Auto-Apply Bot...\n');
 
-    if (!this.config.personalInfo.email) {
-      console.error(
-        '❌ Please configure your personal information in config.json or .env file'
-      );
-      return;
-    }
-
     try {
-      // Initialize browser (will restore session if available)
+      // Initialize browser (will restore session from .browser-context if available)
       await this.initializeBrowser();
 
-      // Check if we need to login
-      const needsLogin = !(await this.verifySession());
+      // Verify session using saved browser context
+      const isAuthenticated = await this.verifySession();
       
-      if (needsLogin) {
-        console.log('🔐 Session not found or expired, starting login flow...\n');
-        const loggedIn = await this.login();
-        if (!loggedIn) {
-          console.error('❌ Failed to authenticate. Exiting...');
-          await this.close();
-          return;
-        }
-      } else {
-        console.log('✅ Using saved session, skipping login');
+      if (!isAuthenticated) {
+        console.error(
+          '❌ No valid session found. Please:\n' +
+          '   1. Run the bot once and manually login in the browser\n' +
+          '   2. The session will be saved to .browser-context\n' +
+          '   3. Future runs will use the saved session automatically\n' +
+          '\n   Or ensure .browser-context file exists with valid session data.'
+        );
+        await this.close();
+        return;
       }
+      
+      console.log('✅ Using saved browser context, authenticated successfully');
 
       // Search for jobs
       const jobs = await this.searchJobs();
@@ -2938,7 +2985,7 @@ Answer with ONLY "yes" or "no".`;
 
       // Apply to each matching job (always enabled)
       console.log('\n🎯 Starting auto-apply process...\n');
-      const maxJobs = this.config.applicationSettings.maxApplicationsPerRun;
+      const maxJobs = parseInt(process.env.MAX_APPLICATIONS || '10', 10);
       
       // Get all jobs (they should already be loaded from searchJobs)
       const jobsToApply = jobs.slice(0, maxJobs);
@@ -2953,7 +3000,7 @@ Answer with ONLY "yes" or "no".`;
 
         // Longer delay between applications to ensure forms are submitted
         if (jobsToApply.indexOf(job) < jobsToApply.length - 1) {
-          const delay = this.config.applicationSettings.delayBetweenApplications;
+          const delay = parseInt(process.env.DELAY_MS || '20000', 10);
           console.log(`\n⏳ Waiting ${delay}ms before next application...`);
           await this.sleep(delay);
         }
@@ -3012,7 +3059,7 @@ Answer with ONLY "yes" or "no".`;
 // Don't auto-run if we're running test.ts or restart.ts
 const scriptPath = process.argv[1] || '';
 const isTestScript = scriptPath.includes('test.ts') || scriptPath.includes('restart.ts');
-const isMainModule = !isTestScript && (scriptPath.includes('index.ts') || scriptPath.includes('index.js') || scriptPath.endsWith('index'));
+const isMainModule = !isTestScript && (scriptPath.includes('index.ts') || scriptPath.includes('index') || scriptPath.endsWith('index'));
 
 if (isMainModule) {
   const bot = new GreenhouseAutoApplyBot();
