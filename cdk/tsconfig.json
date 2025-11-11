@@ -17,6 +17,10 @@
     "types": ["node", "aws-lambda", "playwright"],
     "composite": true
   },
+  "ts-node": {
+    "esm": true,
+    "experimentalSpecifierResolution": "node"
+  },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "cdk.out"]
 }
