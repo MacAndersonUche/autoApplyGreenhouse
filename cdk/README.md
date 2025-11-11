@@ -103,7 +103,7 @@ You can extend the CDK stack to create the layer automatically, but it requires 
 The stack accepts the following configuration options:
 
 - `scheduleExpression`: EventBridge cron expression (default: `cron(0 9 * * ? *)` - daily at 9 AM UTC)
-- `openaiApiKey`: OpenAI API key (stored in Secrets Manager)
+- `openaiApiKey`: OpenAI API key (set as environment variable during deployment)
 - `jobsSearchUrlOneDay`: URL for jobs posted in the past day
 - `resumePath`: Path to resume PDF file
 - `playwrightLayerArn`: ARN of Playwright Lambda layer
@@ -116,7 +116,7 @@ The Lambda function uses these environment variables:
 
 - `JOBS_SEARCH_URL_ONE_DAY`: Jobs search URL (set by CDK)
 - `RESUME_PATH`: Path to resume HTML file (default: `/opt/resume/cv.html`)
-- `OPENAI_SECRET_ARN`: ARN of OpenAI API key secret (if using Secrets Manager)
+- `OPENAI_API_KEY`: OpenAI API key (set as environment variable during deployment)
 
 ### Manual Lambda Package Deployment
 

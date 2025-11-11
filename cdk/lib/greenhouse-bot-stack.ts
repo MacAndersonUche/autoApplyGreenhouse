@@ -4,7 +4,6 @@ import {
   Duration,
   RemovalPolicy,
   CfnOutput,
-  SecretValue,
 } from 'aws-cdk-lib';
 import {
   Function,
@@ -28,13 +27,6 @@ import {
   Bucket,
 } from 'aws-cdk-lib/aws-s3';
 import {
-  BucketDeployment,
-  Source,
-} from 'aws-cdk-lib/aws-s3-deployment';
-import {
-  Secret,
-} from 'aws-cdk-lib/aws-secretsmanager';
-import {
   Table,
   AttributeType,
   BillingMode,
@@ -46,16 +38,10 @@ import {
 } from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 import * as path from 'path';
-import * as fs from 'fs';
 
 export interface GreenhouseBotStackProps extends StackProps {
-  scheduleExpression?: string;
   openaiApiKey?: string;
-  jobsSearchUrlOneDay?: string;
-  resumePath?: string;
   playwrightLayerArn?: string;
-  timeout?: number;
-  memorySize?: number;
   failedJobsTableName?: string; // Optional: reference to existing DynamoDB table
 }
 
@@ -63,11 +49,10 @@ export class GreenhouseBotStack extends Stack {
   constructor(scope: Construct, id: string, props?: GreenhouseBotStackProps) {
     super(scope, id, props);
 
-    const scheduleExpression = props?.scheduleExpression || 'cron(0 9 * * ? *)';
-    const timeout = props?.timeout || 900;
-    const memorySize = props?.memorySize || 2048;
-    const jobsSearchUrlOneDay = props?.jobsSearchUrlOneDay || 
-      'https://my.greenhouse.io/jobs?query=software%20engineer%20&date_posted=past_day&work_type[]=remote';
+    const scheduleExpression = 'cron(0 9 * * ? *)';
+    const timeout = 900;
+    const memorySize = 2048;
+    const jobsSearchUrlOneDay = 'https://my.greenhouse.io/jobs?query=software%20engineer%20&date_posted=past_day&work_type[]=remote';
 
     // DynamoDB table for failed jobs (or reference existing)
     let failedJobsTable: ITable;
@@ -101,12 +86,6 @@ export class GreenhouseBotStack extends Stack {
       isNewTable = true;
     }
 
-    const resumeBucket = new Bucket(this, 'ResumeBucket', {
-      bucketName: `greenhouse-bot-resume-${this.account}-${this.region}`,
-      removalPolicy: RemovalPolicy.DESTROY,
-      autoDeleteObjects: true,
-    });
-
     const contextBucket = new Bucket(this, 'ContextBucket', {
       bucketName: `greenhouse-bot-context-${this.account}-${this.region}`,
       removalPolicy: RemovalPolicy.DESTROY,
@@ -117,16 +96,6 @@ export class GreenhouseBotStack extends Stack {
         noncurrentVersionExpiration: Duration.days(30),
       }],
     });
-
-    if (props?.resumePath && fs.existsSync(props.resumePath)) {
-      new BucketDeployment(this, 'DeployResume', {
-        sources: [Source.asset(path.dirname(props.resumePath), {
-          exclude: ['**', '!*.pdf', '!*.html'],
-        })],
-        destinationBucket: resumeBucket,
-        destinationKeyPrefix: 'resume',
-      });
-    }
 
     // CloudWatch Log Group
     const logGroup = new LogGroup(this, 'BotLogGroup', {
@@ -164,17 +133,15 @@ export class GreenhouseBotStack extends Stack {
       logGroup,
       environment: {
         JOBS_SEARCH_URL_ONE_DAY: jobsSearchUrlOneDay,
-        RESUME_PATH: '/opt/resume/cv.html',
         CONTEXT_BUCKET_NAME: contextBucket.bucketName,
         CONTEXT_S3_KEY: 'browser-context/.browser-context',
         FAILED_JOBS_TABLE_NAME: failedJobsTable.tableName,
-        NODE_ENV: 'production',
+        ...(props?.openaiApiKey && { OPENAI_API_KEY: props.openaiApiKey }),
       },
       layers: playwrightLayer ? [playwrightLayer] : undefined,
     });
 
     // Grant permissions
-    resumeBucket.grantRead(greenhouseBotFunction);
     contextBucket.grantReadWrite(greenhouseBotFunction);
     
     // Grant DynamoDB permissions
@@ -198,15 +165,6 @@ export class GreenhouseBotStack extends Stack {
       );
     }
 
-    // OpenAI Secret (if provided)
-    if (props?.openaiApiKey) {
-      const openaiSecret = new Secret(this, 'OpenAISecret', {
-        secretName: 'greenhouse-bot/openai-api-key',
-        secretStringValue: SecretValue.unsafePlainText(props.openaiApiKey),
-      });
-      openaiSecret.grantRead(greenhouseBotFunction);
-      greenhouseBotFunction.addEnvironment('OPENAI_SECRET_ARN', openaiSecret.secretArn);
-    }
 
     // EventBridge Rule for scheduled execution
     const rule = new Rule(this, 'GreenhouseBotSchedule', {
@@ -228,17 +186,11 @@ export class GreenhouseBotStack extends Stack {
     new CfnOutput(this, 'LambdaFunctionArn', {
       value: greenhouseBotFunction.functionArn,
       description: 'Scheduled Bot Lambda Function ARN',
-      exportName: 'GreenhouseBotScheduledFunctionArn',
     });
     
     new CfnOutput(this, 'EventBridgeRuleArn', {
       value: rule.ruleArn,
       description: 'EventBridge Rule ARN',
-    });
-    
-    new CfnOutput(this, 'ResumeBucketName', {
-      value: resumeBucket.bucketName,
-      description: 'S3 Bucket for resume storage',
     });
     
     new CfnOutput(this, 'ContextBucketName', {

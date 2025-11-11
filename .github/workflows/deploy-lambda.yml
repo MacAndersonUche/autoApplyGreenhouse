@@ -7,29 +7,15 @@ on:
       - master
     paths:
       - 'cdk/**'
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Deployment environment'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - staging
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: eu-north-1
   NODE_VERSION: '20'
 
 jobs:
   deploy:
     name: Deploy Lambda Function
     runs-on: ubuntu-latest
-
-    permissions:
-      id-token: write
-      contents: read
 
     steps:
       - name: Checkout code
@@ -49,12 +35,7 @@ jobs:
           npm ci
           cd cdk && npm ci
 
-      - name: Build core package
-        run: |
-          cd cdk
-          npm run build
-
-      - name: Build lambda package
+      - name: Build
         run: |
           cd cdk
           npm run build
@@ -66,36 +47,10 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Install Playwright browsers (for CDK synth)
-        run: |
-          cd cdk
-          npm run playwright:install || echo "Playwright install skipped (not needed for CDK)"
-
-      - name: Bootstrap CDK (if needed)
-        run: |
-          cd cdk
-          npm run cdk:bootstrap || echo "CDK already bootstrapped"
-        continue-on-error: true
-
-      - name: CDK Synth
-        run: |
-          cd cdk
-          npm run cdk:synth
-        env:
-          # GitHub Actions secrets are valid in env context
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
-          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
-
-      - name: CDK Deploy
+      - name: Deploy CDK stack
         run: |
           cd cdk
           npm run cdk:deploy -- --require-approval never
         env:
-          # GitHub Actions secrets are valid in env context
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          JOBS_SEARCH_URL_ONE_DAY: ${{ secrets.JOBS_SEARCH_URL_ONE_DAY }}
-          SCHEDULE_EXPRESSION: ${{ secrets.SCHEDULE_EXPRESSION || 'cron(0 9 * * ? *)' }}
-          PLAYWRIGHT_LAYER_ARN: ${{ secrets.PLAYWRIGHT_LAYER_ARN }}
-          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
           CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
