@@ -5,6 +5,7 @@
     "lib": ["ES2022", "DOM"],
     "moduleResolution": "node",
     "outDir": "./dist",
+    "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -13,8 +14,9 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "types": ["node", "aws-lambda"]
+    "types": ["node", "aws-lambda", "playwright"],
+    "composite": true
   },
-  "include": ["src/**/*", "lib/**/*", "bin/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "cdk.out"]
 }

@@ -5,8 +5,8 @@
   "main": "dist/bot/index.js",
   "type": "module",
   "scripts": {
-    "build": "tsc && tsc --project tsconfig.bot.json && tsc --project tsconfig.api.json",
-    "build:bot": "tsc --project tsconfig.bot.json",
+    "build": "tsc",
+    "build:bot": "tsc",
     "dev": "tsx src/bot/index.ts",
     "run": "tsx src/bot/index.ts",
     "start": "tsx src/bot/index.ts",
