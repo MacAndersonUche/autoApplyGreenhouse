@@ -115,7 +115,13 @@ export class GreenhouseBotStack extends Stack {
         target: 'node22',
         sourceMap: true,
         minify: true,
-        externalModules: ['playwright'],
+        externalModules: [
+          'playwright',
+          'playwright-core',
+          'chromium-bidi',
+          'chromium-bidi/lib/cjs/bidiMapper/BidiMapper',
+          'chromium-bidi/lib/cjs/cdp/CdpConnection',
+        ],
       },
       environment: {
         JOBS_SEARCH_URL_ONE_DAY: jobsSearchUrlOneDay,

@@ -68,6 +68,13 @@ export class ApiStack extends Stack {
         target: 'node22',
         sourceMap: true,
         minify: true,
+        externalModules: [
+          'playwright',
+          'playwright-core',
+          'chromium-bidi',
+          'chromium-bidi/lib/cjs/bidiMapper/BidiMapper',
+          'chromium-bidi/lib/cjs/cdp/CdpConnection',
+        ],
       },
       environment: {
         FAILED_JOBS_TABLE_NAME: failedJobsTable.tableName,
