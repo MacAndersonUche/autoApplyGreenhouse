@@ -27,6 +27,7 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "@types/aws-lambda": "^8.10.157"
+    "@types/aws-lambda": "^8.10.157",
+    "@tsconfig/recommended": "^1.0.8"
   }
 }
