@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+
+# Personal files
+resume.pdf
+cover-letter.txt
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# TypeScript
+dist/
+*.tsbuildinfo
+
+# Browser context (contains session data)
+.browser-context
+
+# Config (if contains sensitive data)
+# config.json
+

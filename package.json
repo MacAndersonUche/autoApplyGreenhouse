@@ -1,0 +1,30 @@
+{
+  "name": "auto-apply-greenhouse",
+  "version": "1.0.0",
+  "description": "Auto-apply bot for Greenhouse jobs using Playwright",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsc && node dist/index.js",
+    "dev": "tsc --watch & node --watch dist/index.js",
+    "playwright:install": "playwright install chromium"
+  },
+  "keywords": [
+    "greenhouse",
+    "job-application",
+    "automation",
+    "bot",
+    "playwright"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "playwright": "^1.40.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0"
+  }
+}
