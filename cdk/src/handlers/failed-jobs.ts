@@ -1,5 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { GreenhouseAutoApplyBot } from '../bot/index';
+import { storage } from '../helpers/storage';
 
 export const handler = async (
   event: APIGatewayProxyEvent
@@ -7,7 +7,7 @@ export const handler = async (
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Content-Type': 'application/json',
   };
 
@@ -20,29 +20,24 @@ export const handler = async (
   }
 
   try {
-    console.log('Starting bot execution...');
-    const bot = new GreenhouseAutoApplyBot();
-    const stats = await bot.runWithStats();
+    const failedJobs = await storage.getAll();
 
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
         success: true,
-        ...stats,
+        failedJobs,
       }),
     };
   } catch (error: any) {
-    console.error('Error running bot:', error);
+    console.error('Error loading failed jobs:', error);
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({
         success: false,
         error: error.message || 'Unknown error occurred',
-        jobsFound: 0,
-        jobsApplied: 0,
-        jobsFailed: 0,
         failedJobs: [],
       }),
     };
