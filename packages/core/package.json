@@ -1,0 +1,21 @@
+{
+  "name": "@greenhouse-bot/core",
+  "version": "1.0.0",
+  "description": "Core bot logic for Greenhouse auto-apply",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "openai": "^4.104.0",
+    "playwright": "^1.40.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0"
+  }
+}
+

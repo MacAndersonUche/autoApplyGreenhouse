@@ -1,0 +1,32 @@
+{
+  "name": "@greenhouse-bot/lambda",
+  "version": "1.0.0",
+  "description": "Lambda package for Greenhouse auto-apply bot",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "package": "npm run build && zip -r function.zip dist node_modules package.json",
+    "cdk": "cdk",
+    "cdk:synth": "cdk synth",
+    "cdk:deploy": "cdk deploy",
+    "cdk:destroy": "cdk destroy",
+    "cdk:diff": "cdk diff",
+    "cdk:bootstrap": "cdk bootstrap"
+  },
+  "dependencies": {
+    "@greenhouse-bot/core": "*",
+    "@types/aws-lambda": "^8.10.0",
+    "@aws-sdk/client-secrets-manager": "^3.450.0",
+    "@aws-sdk/client-s3": "^3.450.0",
+    "aws-cdk-lib": "^2.100.0",
+    "constructs": "^10.3.0",
+    "source-map-support": "^0.5.21"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0",
+    "ts-node": "^10.9.2",
+    "aws-cdk": "^2.100.0"
+  }
+}

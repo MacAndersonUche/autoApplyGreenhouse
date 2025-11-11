@@ -1,0 +1,16 @@
+# CDK
+cdk.out/
+cdk.context.json
+*.swp
+*.swo
+
+# TypeScript
+dist/
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
+
+# Lambda package
+function.zip
+

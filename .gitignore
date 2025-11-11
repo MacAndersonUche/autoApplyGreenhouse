@@ -25,9 +25,15 @@ Thumbs.db
 # TypeScript
 dist/
 *.tsbuildinfo
+packages/*/dist/
 
 # Browser context (contains session data)
 .browser-context
+packages/*/.browser-context
+
+# Lambda package
+packages/lambda/function.zip
+packages/lambda/node_modules/
 
 # Config (if contains sensitive data)
 # config.json
