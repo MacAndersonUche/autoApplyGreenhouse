@@ -1,5 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { storage } from '../helpers/storage';
+import { storage } from '../helpers/storage.js';
 
 export const handler = async (
   event: APIGatewayProxyEvent

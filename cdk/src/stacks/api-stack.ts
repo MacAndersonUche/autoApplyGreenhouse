@@ -27,7 +27,11 @@ import {
   RetentionDays,
 } from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
-import * as path from 'path';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export interface ApiStackProps extends StackProps {
   openaiApiKey?: string;
@@ -54,7 +58,7 @@ export class ApiStack extends Stack {
 
     const runBotFunction = new NodejsFunction(this, 'RunBotFunction', {
       runtime: Runtime.NODEJS_22_X,
-      entry: path.join(__dirname, '../../src/api/run-bot.ts'),
+      entry: join(__dirname, '../handlers/run-bot.ts'),
       handler: 'handler',
       timeout: Duration.minutes(15),
       memorySize: 2048,
@@ -73,7 +77,7 @@ export class ApiStack extends Stack {
 
     const failedJobsFunction = new NodejsFunction(this, 'FailedJobsFunction', {
       runtime: Runtime.NODEJS_22_X,
-      entry: path.join(__dirname, '../../src/api/failed-jobs.ts'),
+      entry: join(__dirname, '../handlers/failed-jobs.ts'),
       handler: 'handler',
       timeout: Duration.seconds(30),
       memorySize: 256,

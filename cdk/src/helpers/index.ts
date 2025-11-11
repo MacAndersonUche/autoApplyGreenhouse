@@ -2121,7 +2121,7 @@ export class GreenhouseAutoApplyBot {
     if (this.failedSubmissions.length === 0) return;
 
     try {
-      const { storage } = await import('./storage');
+      const { storage } = await import('./storage.js');
       const jobs = this.failedSubmissions.map(job => ({
         ...job,
         type: 'submission' as const,
@@ -2137,7 +2137,7 @@ export class GreenhouseAutoApplyBot {
     if (this.failedApplications.length === 0) return;
 
     try {
-      const { storage } = await import('./storage');
+      const { storage } = await import('./storage.js');
       const jobs = this.failedApplications.map(job => ({
         ...job,
         type: 'application' as const,

@@ -38,7 +38,11 @@ import {
   RetentionDays,
 } from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
-import * as path from 'path';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export interface GreenhouseBotStackProps extends StackProps {
   openaiApiKey?: string;
@@ -101,7 +105,7 @@ export class GreenhouseBotStack extends Stack {
 
     const greenhouseBotFunction = new NodejsFunction(this, 'GreenhouseBotFunction', {
       runtime: Runtime.NODEJS_22_X,
-      entry: path.join(__dirname, '../../src/bot/index.ts'),
+      entry: join(__dirname, '../helpers/index.ts'),
       handler: 'runWithStats',
       timeout: Duration.seconds(timeout),
       memorySize: memorySize,

@@ -1,5 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { GreenhouseAutoApplyBot } from '../helpers/index';
+import { GreenhouseAutoApplyBot } from '../helpers/index.js';
 
 export const handler = async (
   event: APIGatewayProxyEvent
