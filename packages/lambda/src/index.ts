@@ -2,6 +2,7 @@ import { GreenhouseAutoApplyBot } from '@greenhouse-bot/core';
 import type { EventBridgeEvent } from 'aws-lambda';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -48,6 +49,57 @@ async function downloadContextFromS3(): Promise<void> {
     } else {
       console.warn('⚠️  Failed to download browser context from S3:', error.message);
     }
+  }
+}
+
+/**
+ * Send failed jobs to Dead Letter Queue (DLQ)
+ */
+async function sendFailedJobsToDLQ(failedJobs: Array<{ jobTitle: string; url: string; timestamp: string; reason: string; type: 'submission' | 'application' }>): Promise<void> {
+  const dlqUrl = process.env.DLQ_URL;
+  
+  if (!dlqUrl) {
+    console.warn('⚠️  DLQ_URL not set, skipping DLQ send');
+    return;
+  }
+
+  try {
+    const sqsClient = new SQSClient({});
+    
+    // Send each failed job as a separate message to DLQ
+    for (const job of failedJobs) {
+      const messageBody = JSON.stringify({
+        jobTitle: job.jobTitle,
+        url: job.url,
+        timestamp: job.timestamp,
+        reason: job.reason,
+        type: job.type,
+        lambdaExecutionTime: new Date().toISOString(),
+      });
+
+      const command = new SendMessageCommand({
+        QueueUrl: dlqUrl,
+        MessageBody: messageBody,
+        MessageAttributes: {
+          jobTitle: {
+            DataType: 'String',
+            StringValue: job.jobTitle,
+          },
+          type: {
+            DataType: 'String',
+            StringValue: job.type,
+          },
+        },
+      });
+
+      await sqsClient.send(command);
+      console.log(`   ✅ Sent failed ${job.type} to DLQ: ${job.jobTitle}`);
+    }
+    
+    console.log(`✅ Successfully sent ${failedJobs.length} failed job(s) to DLQ`);
+  } catch (error: any) {
+    console.error('❌ Failed to send jobs to DLQ:', error.message);
+    // Don't throw - we don't want to fail the Lambda if DLQ send fails
   }
 }
 
@@ -130,10 +182,18 @@ export const handler = async (event: EventBridgeEvent<'Scheduled Event', any>) =
     // Upload browser context to S3 after successful execution
     await uploadContextToS3();
     
+    // Get failed jobs and send them to DLQ
+    const failedJobs = bot.getFailedJobs();
+    if (failedJobs.length > 0) {
+      console.log(`📋 Sending ${failedJobs.length} failed job(s) to DLQ...`);
+      await sendFailedJobsToDLQ(failedJobs);
+    }
+    
     return {
       statusCode: 200,
       body: JSON.stringify({
         message: 'Bot execution completed successfully',
+        failedJobsCount: failedJobs.length,
         timestamp: new Date().toISOString(),
       }),
     };
@@ -145,6 +205,17 @@ export const handler = async (event: EventBridgeEvent<'Scheduled Event', any>) =
       await uploadContextToS3();
     } catch (uploadError) {
       console.warn('⚠️  Failed to upload context after error:', uploadError);
+    }
+    
+    // Try to get failed jobs even on error and send to DLQ
+    try {
+      const failedJobs = bot.getFailedJobs();
+      if (failedJobs.length > 0) {
+        console.log(`📋 Sending ${failedJobs.length} failed job(s) to DLQ after error...`);
+        await sendFailedJobsToDLQ(failedJobs);
+      }
+    } catch (dlqError) {
+      console.warn('⚠️  Failed to send jobs to DLQ:', dlqError);
     }
     
     return {

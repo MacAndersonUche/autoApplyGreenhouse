@@ -1,0 +1,78 @@
+name: Test Lambda Build
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - 'packages/lambda/**'
+      - 'packages/core/**'
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'packages/lambda/**'
+      - 'packages/core/**'
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  test-build:
+    name: Test Lambda Build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            packages/core/package-lock.json
+            packages/lambda/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd packages/core && npm ci
+          cd ../lambda && npm ci
+
+      - name: Build core package
+        run: |
+          cd packages/core
+          npm run build
+
+      - name: Build lambda package
+        run: |
+          cd packages/lambda
+          npm run build
+
+      - name: CDK Synth (dry run)
+        run: |
+          cd packages/lambda
+          npm run cdk:synth
+        env:
+          # Use dummy values for synth test
+          OPENAI_API_KEY: "dummy-key-for-test"
+          JOBS_SEARCH_URL_ONE_DAY: "https://my.greenhouse.io/jobs?query=software%20engineer%20&date_posted=past_day&work_type[]=remote"
+          SCHEDULE_EXPRESSION: "cron(0 9 * * ? *)"
+          CDK_DEFAULT_ACCOUNT: "123456789012"
+          CDK_DEFAULT_REGION: "us-east-1"
+
+      - name: Check build artifacts
+        run: |
+          if [ -d "packages/lambda/dist" ]; then
+            echo "✅ Lambda build artifacts found"
+            ls -la packages/lambda/dist/
+          else
+            echo "❌ Lambda build artifacts not found"
+            exit 1
+          fi
+

@@ -31,9 +31,17 @@ packages/*/dist/
 .browser-context
 packages/*/.browser-context
 
+# Failed applications and submissions tracking
+failed-submissions.json
+failed-applications.json
+
 # Lambda package
 packages/lambda/function.zip
 packages/lambda/node_modules/
+
+# CDK
+packages/lambda/cdk.out/
+packages/lambda/cdk.context.json
 
 # Config (if contains sensitive data)
 # config.json

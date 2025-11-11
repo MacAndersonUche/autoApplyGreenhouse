@@ -57,6 +57,7 @@ export class GreenhouseAutoApplyBot {
   private contextPath: string;
   private openai: OpenAI | null = null;
   private failedSubmissions: Array<{ jobTitle: string; url: string; timestamp: string; reason: string }> = [];
+  private failedApplications: Array<{ jobTitle: string; url: string; timestamp: string; reason: string }> = [];
   private headless: boolean;
   private jobsSearchUrl: string;
 
@@ -1062,6 +1063,17 @@ export class GreenhouseAutoApplyBot {
     } catch (error) {
       console.warn('   ⚠️  Could not save failed submissions to file:', error);
     }
+  }
+
+  /**
+   * Get all failed submissions and applications for Lambda DLQ
+   */
+  getFailedJobs(): Array<{ jobTitle: string; url: string; timestamp: string; reason: string; type: 'submission' | 'application' }> {
+    const failedJobs = [
+      ...this.failedSubmissions.map(job => ({ ...job, type: 'submission' as const })),
+      ...this.failedApplications.map(job => ({ ...job, type: 'application' as const }))
+    ];
+    return failedJobs;
   }
 
   async handleCookieModal(): Promise<void> {

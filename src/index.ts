@@ -51,6 +51,7 @@ export class GreenhouseAutoApplyBot {
   private contextPath: string;
   private openai: OpenAI | null = null;
   private failedSubmissions: Array<{ jobTitle: string; url: string; timestamp: string; reason: string }> = [];
+  private failedApplications: Array<{ jobTitle: string; url: string; timestamp: string; reason: string }> = [];
 
   constructor() {
     this.resumePath = process.env.RESUME_PATH || './resume.pdf';
@@ -193,6 +194,9 @@ export class GreenhouseAutoApplyBot {
         timeout: 10000,
       });
 
+      // Handle cookie modal immediately after page load
+      await this.handleCookieModal();
+
       // Check if we're redirected to sign in page (means not logged in)
       const currentURL = this.page.url();
       if (currentURL.includes('/users/sign_in')) {
@@ -231,6 +235,9 @@ export class GreenhouseAutoApplyBot {
       waitUntil: 'networkidle',
     });
 
+    // Handle cookie modal immediately after page load
+    await this.handleCookieModal();
+
     // Pre-fill email if available
     const email = this.config.personalInfo.email || 'hi@macandersonuche.dev';
     try {
@@ -250,23 +257,26 @@ export class GreenhouseAutoApplyBot {
     console.log('   4. Wait for the page to redirect to /jobs');
     console.log('\n⏳ Waiting for authentication...\n');
 
-    // Wait for navigation to /jobs page (indicates successful login)
-    try {
-      await this.page.waitForURL(
-        (url) => url.pathname === '/jobs' || url.pathname.startsWith('/jobs'),
-        { timeout: 300000 } // 5 minutes timeout
-      );
+      // Wait for navigation to /jobs page (indicates successful login)
+      try {
+        await this.page.waitForURL(
+          (url) => url.pathname === '/jobs' || url.pathname.startsWith('/jobs'),
+          { timeout: 300000 } // 5 minutes timeout
+        );
 
-      // Verify we're actually logged in by checking for jobs page content
-      await this.page.waitForSelector('body', { timeout: 10000 });
-      
-      const currentURL = this.page.url();
-      if (currentURL.includes('/jobs')) {
-        console.log('✅ Successfully authenticated!');
-        // Save session for future use
-        await this.saveSession();
-        return true;
-      }
+        // Handle cookie modal after navigation
+        await this.handleCookieModal();
+
+        // Verify we're actually logged in by checking for jobs page content
+        await this.page.waitForSelector('body', { timeout: 10000 });
+        
+        const currentURL = this.page.url();
+        if (currentURL.includes('/jobs')) {
+          console.log('✅ Successfully authenticated!');
+          // Save session for future use
+          await this.saveSession();
+          return true;
+        }
     } catch (error) {
       console.error('❌ Authentication timeout or failed');
       console.error('Please ensure you completed the login process');
@@ -291,10 +301,13 @@ export class GreenhouseAutoApplyBot {
         waitUntil: 'networkidle',
       });
       // Wait for page to load
-      await this.page.waitForTimeout(2000);
+      await this.page.waitForTimeout(1000);
 
-      // Handle cookie modal if present
+      // Handle cookie modal immediately after page load (before any other interactions)
       await this.handleCookieModal();
+      
+      // Wait a bit more after handling cookie modal
+      await this.page.waitForTimeout(1000);
 
       // Load ALL jobs before extracting them
       await this.loadAllJobs();
@@ -787,7 +800,12 @@ export class GreenhouseAutoApplyBot {
       
       // Navigate to the job URL
       await this.page.goto(jobUrl, { waitUntil: 'networkidle' });
-      await this.page.waitForTimeout(2000);
+      await this.page.waitForTimeout(1000);
+
+      // Handle cookie modal immediately after page load
+      await this.handleCookieModal();
+      
+      await this.page.waitForTimeout(1000);
 
       // Perform the application process
       return await this.performJobApplication(jobTitle);
@@ -807,12 +825,17 @@ export class GreenhouseAutoApplyBot {
       throw new Error('Page not initialized');
     }
 
+    const applicationStartTime = Date.now();
+    const maxApplicationTime = 30000; // 30 seconds
+
     try {
-      // Click into a text box to trigger auto-fill settings
-      console.log('   📝 Clicking into text box to trigger auto-fill...');
+      // First, try clicking into a text input to trigger auto-fill
+      console.log('   📝 Clicking into text input to trigger auto-fill...');
+      let fieldsPopulated = false;
       try {
         const textBoxSelectors = [
           'input[type="text"]',
+          'input[type="email"]',
           'textarea',
           'input[name*="name"]',
           'input[name*="email"]',
@@ -825,16 +848,123 @@ export class GreenhouseAutoApplyBot {
             const textBox = await this.page.$(selector);
             if (textBox) {
               await textBox.click();
-              await this.page.waitForTimeout(500);
-              console.log('   ✅ Clicked text box, auto-fill should trigger');
-              break;
+              await this.page.waitForTimeout(1500); // Wait for auto-fill to populate
+              
+              // Check if any fields got populated
+              const allInputs = await this.page.$$('input[type="text"], input[type="email"], textarea');
+              let filledCount = 0;
+              for (const input of allInputs.slice(0, 5)) { // Check first 5 inputs
+                try {
+                  const value = await input.inputValue();
+                  if (value && value.trim().length > 0) {
+                    filledCount++;
+                  }
+                } catch (e) {
+                  continue;
+                }
+              }
+              
+              if (filledCount > 0) {
+                console.log(`   ✅ Auto-fill triggered by clicking text input (${filledCount} fields populated)`);
+                fieldsPopulated = true;
+                break;
+              }
             }
           } catch (e) {
             continue;
           }
         }
       } catch (error) {
-        console.warn('   ⚠️  Could not find text box to click');
+        console.warn('   ⚠️  Error clicking text input:', error);
+      }
+
+      // If fields didn't populate, try clicking the "Autofill with MyGreenhouse" button
+      if (!fieldsPopulated) {
+        console.log('   📝 Fields not populated, looking for "Autofill with MyGreenhouse" button...');
+        try {
+          // Try multiple selectors to find the autofill button (case sensitive: capital A and M)
+          const autofillButtonSelectors = [
+            'button:has-text("Autofill with MyGreenhouse")',
+            'a:has-text("Autofill with MyGreenhouse")',
+            '[role="button"]:has-text("Autofill with MyGreenhouse")',
+            'button[class*="autofill" i]',
+            'a[class*="autofill" i]',
+            'button[id*="autofill" i]',
+            'a[id*="autofill" i]',
+          ];
+
+          let autofillButtonFound = false;
+          for (const selector of autofillButtonSelectors) {
+            try {
+              const autofillButton = await this.page.$(selector);
+              if (autofillButton) {
+                // Check if the button text matches exactly (case sensitive: "Autofill with MyGreenhouse")
+                const buttonText = await autofillButton.textContent();
+                if (buttonText && buttonText.includes('Autofill with MyGreenhouse')) {
+                  const isVisible = await autofillButton.isVisible().catch(() => false);
+                  if (isVisible) {
+                    // Scroll button into view if needed
+                    await autofillButton.scrollIntoViewIfNeeded().catch(() => {});
+                    await this.page.waitForTimeout(200);
+                    
+                    // Try clicking with multiple methods
+                    try {
+                      await autofillButton.click({ timeout: 2000 });
+                    } catch (e) {
+                      // Fallback: use JavaScript click
+                      await autofillButton.evaluate((btn: HTMLElement) => {
+                        (btn as HTMLElement).click();
+                      });
+                    }
+                    
+                    await this.page.waitForTimeout(1500);
+                    console.log('   ✅ Clicked "Autofill with MyGreenhouse" button');
+                    autofillButtonFound = true;
+                    break;
+                  }
+                }
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+
+          // Fallback: Try using evaluate to find button with exact text match (case sensitive)
+          if (!autofillButtonFound) {
+            try {
+              const clicked = await this.page.evaluate(() => {
+                const allButtons = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+                const autofillButton = allButtons.find((btn: Element) => {
+                  const text = btn.textContent || '';
+                  return text.includes('Autofill with MyGreenhouse');
+                });
+
+                if (autofillButton) {
+                  const style = window.getComputedStyle(autofillButton as HTMLElement);
+                  if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+                    (autofillButton as HTMLElement).click();
+                    return true;
+                  }
+                }
+                return false;
+              });
+
+              if (clicked) {
+                await this.page.waitForTimeout(1500);
+                console.log('   ✅ Clicked "Autofill with MyGreenhouse" button (via evaluate)');
+                autofillButtonFound = true;
+              }
+            } catch (e) {
+              // Silently continue if evaluate fails
+            }
+          }
+
+          if (!autofillButtonFound) {
+            console.warn('   ⚠️  Could not find "Autofill with MyGreenhouse" button');
+          }
+        } catch (error) {
+          console.warn('   ⚠️  Error looking for autofill button:', error);
+        }
       }
 
       // Scroll to the end of the page
@@ -843,6 +973,21 @@ export class GreenhouseAutoApplyBot {
         window.scrollTo(0, document.body.scrollHeight);
       });
       await this.page.waitForTimeout(1000);
+
+      // Check if we've exceeded 30 seconds before continuing
+      const elapsedTime = Date.now() - applicationStartTime;
+      if (elapsedTime >= maxApplicationTime) {
+        const jobUrl = this.page.url();
+        console.log(`   ⏱️  Application process exceeded 30 seconds (${Math.round(elapsedTime / 1000)}s), marking as failed`);
+        this.failedApplications.push({
+          jobTitle: jobTitle,
+          url: jobUrl,
+          timestamp: new Date().toISOString(),
+          reason: `Application process exceeded 30 seconds before finding apply button`
+        });
+        await this.saveFailedApplications();
+        return false;
+      }
 
       // Look for apply button
       const applySelectors = [
@@ -869,6 +1014,20 @@ export class GreenhouseAutoApplyBot {
 
       if (!applyButton) {
         console.log('   ⚠️  Apply button not found, skipping...');
+        
+        // Check if we've exceeded 30 seconds
+        const elapsedTimeAfterSearch = Date.now() - applicationStartTime;
+        if (elapsedTimeAfterSearch >= maxApplicationTime) {
+          const jobUrl = this.page.url();
+          this.failedApplications.push({
+            jobTitle: jobTitle,
+            url: jobUrl,
+            timestamp: new Date().toISOString(),
+            reason: `Application process exceeded 30 seconds - apply button not found`
+          });
+          await this.saveFailedApplications();
+        }
+        
         // Close the job tab and switch back to main page
         if (this.context && this.context.pages().length > 1) {
           if (this.page) {
@@ -894,6 +1053,21 @@ export class GreenhouseAutoApplyBot {
       await this.page.waitForTimeout(2000);
       console.log('   ✅ Clicked apply button');
 
+      // Check if we've exceeded 30 seconds
+      const elapsedTimeAfterApply = Date.now() - applicationStartTime;
+      if (elapsedTimeAfterApply >= maxApplicationTime) {
+        const jobUrl = this.page.url();
+        console.log(`   ⏱️  Application process exceeded 30 seconds (${Math.round(elapsedTimeAfterApply / 1000)}s), marking as failed`);
+        this.failedApplications.push({
+          jobTitle: jobTitle,
+          url: jobUrl,
+          timestamp: new Date().toISOString(),
+          reason: `Application process exceeded 30 seconds after clicking apply button`
+        });
+        await this.saveFailedApplications();
+        return false;
+      }
+
       // Wait for application form to appear
       console.log('   📋 Application form opened');
       console.log('   ⏳ Waiting for form to fully load...');
@@ -901,6 +1075,21 @@ export class GreenhouseAutoApplyBot {
 
       // Handle cookie modal again in case it appears after navigation
       await this.handleCookieModal();
+      
+      // Check again after form load
+      const elapsedTimeAfterFormLoad = Date.now() - applicationStartTime;
+      if (elapsedTimeAfterFormLoad >= maxApplicationTime) {
+        const jobUrl = this.page.url();
+        console.log(`   ⏱️  Application process exceeded 30 seconds (${Math.round(elapsedTimeAfterFormLoad / 1000)}s), marking as failed`);
+        this.failedApplications.push({
+          jobTitle: jobTitle,
+          url: jobUrl,
+          timestamp: new Date().toISOString(),
+          reason: `Application process exceeded 30 seconds after form loaded`
+        });
+        await this.saveFailedApplications();
+        return false;
+      }
 
       // Fill required text boxes using OpenAI
       await this.fillRequiredTextFields();
@@ -1037,6 +1226,137 @@ export class GreenhouseAutoApplyBot {
         }
       }
 
+      // Helper function to trigger auto-fill
+      const triggerAutofill = async (): Promise<boolean> => {
+        if (!this.page) {
+          return false;
+        }
+
+        // First, try clicking into a text input to trigger auto-fill
+        console.log('   📝 Attempting to trigger auto-fill...');
+        try {
+          const textBoxSelectors = [
+            'input[type="text"]',
+            'input[type="email"]',
+            'textarea',
+            'input[name*="name"]',
+            'input[name*="email"]',
+            'input[class*="input"]',
+            '[contenteditable="true"]',
+          ];
+
+          let fieldsPopulated = false;
+          for (const selector of textBoxSelectors) {
+            try {
+              const textBox = await this.page.$(selector);
+              if (textBox) {
+                await textBox.click();
+                await this.page.waitForTimeout(1000);
+                
+                // Check if any fields got populated
+                const allInputs = await this.page.$$('input[type="text"], input[type="email"], textarea');
+                let filledCount = 0;
+                for (const input of allInputs.slice(0, 5)) {
+                  try {
+                    const value = await input.inputValue();
+                    if (value && value.trim().length > 0) {
+                      filledCount++;
+                    }
+                  } catch (e) {
+                    continue;
+                  }
+                }
+                
+                if (filledCount > 0) {
+                  console.log(`   ✅ Auto-fill triggered (${filledCount} fields populated)`);
+                  fieldsPopulated = true;
+                  break;
+                }
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+
+          // If fields didn't populate, try clicking the "Autofill with MyGreenhouse" button
+          if (!fieldsPopulated) {
+            console.log('   📝 Trying "Autofill with MyGreenhouse" button...');
+            const autofillButtonSelectors = [
+              'button:has-text("Autofill with MyGreenhouse")',
+              'a:has-text("Autofill with MyGreenhouse")',
+              '[role="button"]:has-text("Autofill with MyGreenhouse")',
+              'button[class*="autofill" i]',
+              'a[class*="autofill" i]',
+              'button[id*="autofill" i]',
+              'a[id*="autofill" i]',
+            ];
+
+            for (const selector of autofillButtonSelectors) {
+              try {
+                const autofillButton = await this.page.$(selector);
+                if (autofillButton) {
+                  const buttonText = await autofillButton.textContent();
+                  if (buttonText && buttonText.includes('Autofill with MyGreenhouse')) {
+                    const isVisible = await autofillButton.isVisible().catch(() => false);
+                    if (isVisible) {
+                      await autofillButton.scrollIntoViewIfNeeded().catch(() => {});
+                      await this.page.waitForTimeout(200);
+                      
+                      try {
+                        await autofillButton.click({ timeout: 2000 });
+                      } catch (e) {
+                        await autofillButton.evaluate((btn: HTMLElement) => {
+                          (btn as HTMLElement).click();
+                        });
+                      }
+                      
+                      await this.page.waitForTimeout(1000);
+                      console.log('   ✅ Clicked "Autofill with MyGreenhouse" button');
+                      return true;
+                    }
+                  }
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+
+            // Fallback: Try using evaluate
+            try {
+              const clicked = await this.page.evaluate(() => {
+                const allButtons = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+                const autofillButton = allButtons.find((btn: Element) => {
+                  const text = btn.textContent || '';
+                  return text.includes('Autofill with MyGreenhouse');
+                });
+
+                if (autofillButton) {
+                  const style = window.getComputedStyle(autofillButton as HTMLElement);
+                  if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+                    (autofillButton as HTMLElement).click();
+                    return true;
+                  }
+                }
+                return false;
+              });
+
+              if (clicked) {
+                await this.page.waitForTimeout(1000);
+                console.log('   ✅ Clicked "Autofill with MyGreenhouse" button (via evaluate)');
+                return true;
+              }
+            } catch (e) {
+              // Silently continue
+            }
+          } else {
+            return true;
+          }
+        } catch (error) {
+          console.warn('   ⚠️  Error triggering auto-fill:', error);
+        }
+        return false;
+      };
+
       let submissionSuccessful = false;
       
       if (!submitButton) {
@@ -1093,46 +1413,86 @@ export class GreenhouseAutoApplyBot {
         } catch (error) {
           const elapsedTime = Date.now() - submissionStartTime;
           
-          if (elapsedTime >= timeoutMs) {
-            console.log('   ⏱️  Submission timeout after 1 minute');
-            submissionSuccessful = false;
+          // If submission didn't work, try triggering auto-fill and resubmit
+          if (elapsedTime < timeoutMs) {
+            console.log('   ⚠️  Submission may have failed, trying to trigger auto-fill and resubmit...');
+            const autofillTriggered = await triggerAutofill();
             
-            // Record failed submission
-            const jobUrl = this.page.url();
-            this.failedSubmissions.push({
-              jobTitle: jobTitle,
-              url: jobUrl,
-              timestamp: new Date().toISOString(),
-              reason: 'Submission timeout after 1 minute'
-            });
-            
-            // Write to JSON file
-            await this.saveFailedSubmissions();
-          } else {
-            console.warn('   ⚠️  Could not confirm submission');
-            // Check for error messages
-            try {
-              const errorMessages = await this.page.$$('text=/error|invalid|required|missing/i');
-              if (errorMessages.length > 0) {
-                console.log('   ❌ Error messages found, submission may have failed');
-                submissionSuccessful = false;
+            if (autofillTriggered) {
+              await this.page.waitForTimeout(2000);
+              
+              // Try clicking submit button again
+              try {
+                const submitButtonRetry = await this.page.$(submitSelectors[0]).catch(() => null) ||
+                                         await this.page.$(submitSelectors[1]).catch(() => null) ||
+                                         await this.page.$(submitSelectors[2]).catch(() => null);
                 
-                // Record failed submission
-                const jobUrl = this.page.url();
-                this.failedSubmissions.push({
-                  jobTitle: jobTitle,
-                  url: jobUrl,
-                  timestamp: new Date().toISOString(),
-                  reason: 'Error messages found on page'
-                });
-                
-                // Write to JSON file
-                await this.saveFailedSubmissions();
-              } else {
-                submissionSuccessful = true; // Assume success if no errors found
+                if (submitButtonRetry) {
+                  console.log('   📤 Retrying submit after auto-fill...');
+                  await submitButtonRetry.click();
+                  await this.page.waitForTimeout(3000);
+                  
+                  // Check again for success
+                  try {
+                    await Promise.race([
+                      this.page.waitForSelector('text=/success|submitted|thank you|application received/i', { timeout: 10000 }),
+                      this.page.waitForSelector('[class*="success"]', { timeout: 10000 }),
+                      this.page.waitForSelector('[class*="submitted"]', { timeout: 10000 }),
+                    ]);
+                    submissionSuccessful = true;
+                    console.log('   ✅ Application submitted successfully after auto-fill');
+                  } catch (e) {
+                    // Still didn't work
+                  }
+                }
+              } catch (e) {
+                // Couldn't retry submit
               }
-            } catch (e) {
-              submissionSuccessful = true; // Assume success on error
+            }
+          }
+          
+          if (!submissionSuccessful) {
+            if (elapsedTime >= timeoutMs) {
+              console.log('   ⏱️  Submission timeout after 1 minute');
+              submissionSuccessful = false;
+              
+              // Record failed submission
+              const jobUrl = this.page.url();
+              this.failedSubmissions.push({
+                jobTitle: jobTitle,
+                url: jobUrl,
+                timestamp: new Date().toISOString(),
+                reason: 'Submission timeout after 1 minute'
+              });
+              
+              // Write to JSON file
+              await this.saveFailedSubmissions();
+            } else {
+              console.warn('   ⚠️  Could not confirm submission');
+              // Check for error messages
+              try {
+                const errorMessages = await this.page.$$('text=/error|invalid|required|missing/i');
+                if (errorMessages.length > 0) {
+                  console.log('   ❌ Error messages found, submission may have failed');
+                  submissionSuccessful = false;
+                  
+                  // Record failed submission
+                  const jobUrl = this.page.url();
+                  this.failedSubmissions.push({
+                    jobTitle: jobTitle,
+                    url: jobUrl,
+                    timestamp: new Date().toISOString(),
+                    reason: 'Error messages found on page'
+                  });
+                  
+                  // Write to JSON file
+                  await this.saveFailedSubmissions();
+                } else {
+                  submissionSuccessful = true; // Assume success if no errors found
+                }
+              } catch (e) {
+                submissionSuccessful = true; // Assume success on error
+              }
             }
           }
         }
@@ -1177,6 +1537,20 @@ export class GreenhouseAutoApplyBot {
       }
     } catch (error) {
       console.error(`   ❌ Error in application process: ${error}`);
+      
+      // Check if we exceeded 30 seconds
+      const elapsedTime = Date.now() - applicationStartTime;
+      if (elapsedTime >= maxApplicationTime) {
+        const jobUrl = this.page ? this.page.url() : 'unknown';
+        this.failedApplications.push({
+          jobTitle: jobTitle,
+          url: jobUrl,
+          timestamp: new Date().toISOString(),
+          reason: `Application process exceeded 30 seconds (${Math.round(elapsedTime / 1000)}s) - ${error instanceof Error ? error.message : String(error)}`
+        });
+        await this.saveFailedApplications();
+      }
+      
       return false;
     }
   }
@@ -1220,14 +1594,24 @@ export class GreenhouseAutoApplyBot {
         
         // Wait for page to load
         await jobPage.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-        await jobPage.waitForTimeout(2000);
+        await jobPage.waitForTimeout(1000);
         
         // Use the job page for finding apply button
         this.page = jobPage;
+        
+        // Handle cookie modal immediately after page load
+        await this.handleCookieModal();
+        
+        await this.page.waitForTimeout(1000);
       } else if (job.href && !job.href.startsWith('job-')) {
         // Fallback: navigate directly if we have a URL
         await this.page.goto(job.href, { waitUntil: 'networkidle' });
-        await this.page.waitForTimeout(2000);
+        await this.page.waitForTimeout(1000);
+        
+        // Handle cookie modal immediately after page load
+        await this.handleCookieModal();
+        
+        await this.page.waitForTimeout(1000);
       } else {
         console.log('   ⚠️  No view button or URL found, skipping...');
         return false;
@@ -1256,28 +1640,45 @@ export class GreenhouseAutoApplyBot {
     }
   }
 
+  async saveFailedApplications(): Promise<void> {
+    try {
+      const failedApplicationsPath = path.join(__dirname, '..', 'failed-applications.json');
+      const data = {
+        totalFailed: this.failedApplications.length,
+        applications: this.failedApplications,
+        lastUpdated: new Date().toISOString()
+      };
+      await fs.writeFile(failedApplicationsPath, JSON.stringify(data, null, 2), 'utf8');
+      console.log(`   💾 Saved ${this.failedApplications.length} failed application(s) to failed-applications.json`);
+    } catch (error) {
+      console.warn('   ⚠️  Could not save failed applications to file:', error);
+    }
+  }
+
   async handleCookieModal(): Promise<void> {
     if (!this.page) {
       return;
     }
 
     try {
-      // Wait a bit for modal to appear
-      await this.page.waitForTimeout(1000);
+      // Wait a bit for modal to appear (but not too long)
+      await this.page.waitForTimeout(500);
 
-      // Look for cookie consent buttons/modals
+      // First, try to find and click cookie consent buttons directly
       const cookieButtonSelectors = [
         'button:has-text("Accept All")',
         'button:has-text("Accept all")',
-        'button:has-text("Accept")',
-        'button[id*="accept"]',
-        'button[class*="accept"]',
-        'button[class*="cookie"]:has-text("Accept")',
-        '[data-testid*="accept"]',
-        '[data-testid*="cookie"]:has-text("Accept")',
         'a:has-text("Accept All")',
+        'a:has-text("Accept all")',
+        'button:has-text("Accept")',
         'a:has-text("Accept")',
+        '[role="button"]:has-text("Accept All")',
         '[role="button"]:has-text("Accept")',
+        'button[id*="accept" i]',
+        'button[class*="accept" i]',
+        'button[class*="cookie" i]:has-text("Accept")',
+        '[data-testid*="accept" i]',
+        '[data-testid*="cookie" i]:has-text("Accept")',
       ];
 
       for (const selector of cookieButtonSelectors) {
@@ -1286,9 +1687,25 @@ export class GreenhouseAutoApplyBot {
           if (cookieButton) {
             const isVisible = await cookieButton.isVisible().catch(() => false);
             if (isVisible) {
-              await cookieButton.click();
+              // Scroll button into view if needed
+              await cookieButton.scrollIntoViewIfNeeded().catch(() => {});
+              await this.page.waitForTimeout(200);
+              
+              // Try clicking with multiple methods
+              try {
+                await cookieButton.click({ timeout: 2000 });
+              } catch (e) {
+                // Fallback: use JavaScript click
+                await cookieButton.evaluate((btn: HTMLElement) => {
+                  (btn as HTMLElement).click();
+                });
+              }
+              
               await this.page.waitForTimeout(500);
               console.log('   🍪 Clicked cookie accept button');
+              
+              // Wait a bit more and check if modal disappeared
+              await this.page.waitForTimeout(300);
               return; // Successfully handled
             }
           }
@@ -1300,10 +1717,13 @@ export class GreenhouseAutoApplyBot {
       // Also try to find modal/dialog and look for accept button inside
       const modalSelectors = [
         '[role="dialog"]',
-        '[class*="modal"]',
-        '[class*="cookie"]',
-        '[id*="cookie"]',
-        '[id*="consent"]',
+        '[class*="modal" i]',
+        '[class*="cookie" i]',
+        '[class*="consent" i]',
+        '[id*="cookie" i]',
+        '[id*="consent" i]',
+        '[class*="banner" i]',
+        '[class*="overlay" i]',
       ];
 
       for (const modalSelector of modalSelectors) {
@@ -1312,13 +1732,33 @@ export class GreenhouseAutoApplyBot {
           if (modal) {
             const isVisible = await modal.isVisible().catch(() => false);
             if (isVisible) {
-              // Look for accept button within the modal
-              const acceptButton = await modal.$('button:has-text("Accept"), button:has-text("Accept All"), a:has-text("Accept")');
-              if (acceptButton) {
-                await acceptButton.click();
-                await this.page.waitForTimeout(500);
-                console.log('   🍪 Clicked cookie accept button in modal');
-                return;
+              // Look for accept button within the modal (prioritize "Accept All")
+              const acceptAllButton = await modal.$('button:has-text("Accept All"), a:has-text("Accept All"), button:has-text("Accept all"), a:has-text("Accept all")').catch(() => null);
+              const acceptButton = acceptAllButton || await modal.$('button:has-text("Accept"), a:has-text("Accept")').catch(() => null);
+              
+              if (acceptButton || acceptAllButton) {
+                const buttonToClick = acceptAllButton || acceptButton;
+                if (buttonToClick) {
+                  // Scroll button into view
+                  await buttonToClick.scrollIntoViewIfNeeded().catch(() => {});
+                  await this.page.waitForTimeout(200);
+                  
+                  try {
+                    await buttonToClick.click({ timeout: 2000 });
+                  } catch (e) {
+                    // Fallback: use JavaScript click
+                    await buttonToClick.evaluate((btn: HTMLElement) => {
+                      (btn as HTMLElement).click();
+                    });
+                  }
+                  
+                  await this.page.waitForTimeout(500);
+                  console.log('   🍪 Clicked cookie accept button in modal');
+                  
+                  // Wait a bit more and check if modal disappeared
+                  await this.page.waitForTimeout(300);
+                  return;
+                }
               }
             }
           }
@@ -1326,8 +1766,53 @@ export class GreenhouseAutoApplyBot {
           continue;
         }
       }
+
+      // Try using evaluate to find and click any cookie consent elements
+      try {
+        const clicked = await this.page.evaluate(() => {
+          // Look for common cookie consent text patterns
+          const allButtons = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+          const cookieButtons = allButtons.filter((btn: Element) => {
+            const text = btn.textContent?.toLowerCase() || '';
+            return text.includes('accept') && (
+              text.includes('all') || 
+              text.includes('cookie') || 
+              text.includes('consent') ||
+              btn.closest('[class*="cookie" i]') !== null ||
+              btn.closest('[class*="consent" i]') !== null ||
+              btn.closest('[id*="cookie" i]') !== null ||
+              btn.closest('[id*="consent" i]') !== null
+            );
+          });
+
+          if (cookieButtons.length > 0) {
+            // Prefer "Accept All" over "Accept"
+            const acceptAll = cookieButtons.find((btn: Element) => 
+              btn.textContent?.toLowerCase().includes('all')
+            );
+            const buttonToClick = acceptAll || cookieButtons[0];
+            
+            // Check if visible
+            const style = window.getComputedStyle(buttonToClick as HTMLElement);
+            if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+              (buttonToClick as HTMLElement).click();
+              return true;
+            }
+          }
+          return false;
+        });
+
+        if (clicked) {
+          await this.page.waitForTimeout(500);
+          console.log('   🍪 Clicked cookie accept button (via evaluate)');
+          return;
+        }
+      } catch (e) {
+        // Silently continue if evaluate fails
+      }
     } catch (error) {
       // Silently fail - cookie modal might not be present
+      // This is expected behavior - if no modal exists, we just continue
     }
   }
 
@@ -1337,28 +1822,8 @@ export class GreenhouseAutoApplyBot {
     }
 
     try {
-      // Read resume PDF content
-      const resumePath = path.join(__dirname, '..', 'MacAndersonUcheCVAB.pdf');
-      let resumeContent = '';
-      
-      try {
-        // Try to read PDF as text (basic approach - may need PDF parser for better extraction)
-        const resumeBuffer = await fs.readFile(resumePath);
-        // Convert buffer to text (basic extraction, PDFs need proper parsing)
-        resumeContent = resumeBuffer.toString('utf-8', 0, Math.min(10000, resumeBuffer.length));
-        // Clean up non-printable characters
-        resumeContent = resumeContent.replace(/[^\x20-\x7E\n\r]/g, ' ').substring(0, 5000);
-      } catch (error) {
-        console.warn(`   ⚠️  Could not read resume PDF: ${error}`);
-        // Fallback: use a simple prompt without resume
-        resumeContent = 'Software engineer with experience in full-stack development';
-      }
-
       const systemPrompt = `You are a helpful assistant that helps fill out job application forms. 
-Generate concise, professional answers based on the candidate's resume information.
-
-Resume content (extracted from PDF):
-${resumeContent}
+Generate concise, professional answers based on the candidate's information.
 
 Work Authorization Information:
 - British citizen
@@ -1366,13 +1831,13 @@ Work Authorization Information:
 - Requires sponsorship to work in the United States
 
 Keep answers brief (1-3 sentences for most questions, up to 100 words for longer responses).
-Be professional and relevant to the question asked. Use information from the resume to answer questions about experience, skills, and background.
+Be professional and relevant to the question asked.
 For work authorization questions, mention that you are a British citizen who can work anywhere but require sponsorship for US positions.`;
 
       const userPrompt = `Field type: ${fieldType}
 Question/Label: ${question}
 
-Generate an appropriate answer for this job application field based on the resume information provided.`;
+Generate an appropriate answer for this job application field.`;
 
       const completion = await this.openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
@@ -1733,12 +2198,23 @@ Generate an appropriate answer for this job application field based on the resum
         await this.saveFailedSubmissions();
         console.log(`\n📋 Total failed submissions: ${this.failedSubmissions.length}`);
       }
+      
+      // Save any failed applications
+      if (this.failedApplications.length > 0) {
+        await this.saveFailedApplications();
+        console.log(`\n📋 Total failed applications (exceeded 30s): ${this.failedApplications.length}`);
+      }
     } catch (error) {
       console.error('Fatal error:', error);
       
       // Save failed submissions even on error
       if (this.failedSubmissions.length > 0) {
         await this.saveFailedSubmissions();
+      }
+      
+      // Save failed applications even on error
+      if (this.failedApplications.length > 0) {
+        await this.saveFailedApplications();
       }
     } finally {
       await this.close();

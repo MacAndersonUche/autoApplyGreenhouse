@@ -69,6 +69,34 @@ npm run start
 ```
 
 ### Lambda Deployment
+
+#### Option 1: GitHub Actions (Recommended)
+
+1. Configure GitHub Secrets (see `.github/DEPLOYMENT.md`)
+2. Push to `main` branch or manually trigger workflow
+3. Deployment happens automatically via GitHub Actions
+
+#### Option 2: Manual CDK Deployment
+
+1. Build the lambda package:
+```bash
+npm run build:lambda
+cd packages/lambda
+npm install
+npm run cdk:bootstrap  # First time only
+npm run cdk:deploy
+```
+
+2. Set environment variables:
+```bash
+export OPENAI_API_KEY=your_key
+export AWS_ACCOUNT_ID=your_account_id
+export AWS_REGION=us-east-1
+npm run cdk:deploy
+```
+
+#### Option 3: Manual Lambda Package
+
 1. Build the lambda package:
 ```bash
 npm run build:lambda

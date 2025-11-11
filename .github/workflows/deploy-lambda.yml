@@ -1,0 +1,137 @@
+name: Deploy Lambda to AWS
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'packages/lambda/**'
+      - 'packages/core/**'
+      - '.github/workflows/deploy-lambda.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  AWS_REGION: us-east-1
+  NODE_VERSION: '20'
+
+jobs:
+  deploy:
+    name: Deploy Lambda Function
+    runs-on: ubuntu-latest
+    
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            packages/core/package-lock.json
+            packages/lambda/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd packages/core && npm ci
+          cd ../lambda && npm ci
+
+      - name: Build core package
+        run: |
+          cd packages/core
+          npm run build
+
+      - name: Build lambda package
+        run: |
+          cd packages/lambda
+          npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # $GITHUB_SECRET is a valid context for GitHub Actions secrets
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+        # Alternative: Use access keys (less secure)
+        # with:
+        #   aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        #   aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        #   aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install Playwright browsers (for CDK synth)
+        run: |
+          cd packages/lambda
+          npm run playwright:install || echo "Playwright install skipped (not needed for CDK)"
+
+      - name: Bootstrap CDK (if needed)
+        run: |
+          cd packages/lambda
+          npm run cdk:bootstrap || echo "CDK already bootstrapped"
+        continue-on-error: true
+
+      - name: CDK Synth
+        run: |
+          cd packages/lambda
+          npm run cdk:synth
+        env:
+          # GitHub Actions secrets are valid in env context
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          JOBS_SEARCH_URL_ONE_DAY: ${{ secrets.JOBS_SEARCH_URL_ONE_DAY }}
+          SCHEDULE_EXPRESSION: ${{ secrets.SCHEDULE_EXPRESSION || 'cron(0 9 * * ? *)' }}
+          PLAYWRIGHT_LAYER_ARN: ${{ secrets.PLAYWRIGHT_LAYER_ARN }}
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
+      - name: CDK Diff
+        run: |
+          cd packages/lambda
+          npm run cdk:diff
+        continue-on-error: true
+        env:
+          # GitHub Actions secrets are valid in env context
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          JOBS_SEARCH_URL_ONE_DAY: ${{ secrets.JOBS_SEARCH_URL_ONE_DAY }}
+          SCHEDULE_EXPRESSION: ${{ secrets.SCHEDULE_EXPRESSION || 'cron(0 9 * * ? *)' }}
+          PLAYWRIGHT_LAYER_ARN: ${{ secrets.PLAYWRIGHT_LAYER_ARN }}
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
+      - name: CDK Deploy
+        run: |
+          cd packages/lambda
+          npm run cdk:deploy -- --require-approval never
+        env:
+          # GitHub Actions secrets are valid in env context
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          JOBS_SEARCH_URL_ONE_DAY: ${{ secrets.JOBS_SEARCH_URL_ONE_DAY }}
+          SCHEDULE_EXPRESSION: ${{ secrets.SCHEDULE_EXPRESSION || 'cron(0 9 * * ? *)' }}
+          PLAYWRIGHT_LAYER_ARN: ${{ secrets.PLAYWRIGHT_LAYER_ARN }}
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
+      - name: Get deployment outputs
+        run: |
+          cd packages/lambda
+          aws cloudformation describe-stacks \
+            --stack-name GreenhouseBotStack \
+            --query 'Stacks[0].Outputs' \
+            --output table || echo "Could not retrieve stack outputs"
+        continue-on-error: true
+

@@ -9,13 +9,14 @@
   "scripts": {
     "build": "npm run build --workspaces",
     "build:core": "npm run build --workspace=@greenhouse-bot/core",
-    "build:cli": "npm run build --workspace=@greenhouse-bot/cli",
     "build:lambda": "npm run build --workspace=@greenhouse-bot/lambda",
-    "start": "npm run start --workspace=@greenhouse-bot/cli",
-    "dev": "npm run dev --workspace=@greenhouse-bot/cli",
-    "test:job": "npm run test:job --workspace=@greenhouse-bot/cli",
-    "playwright:install": "npm run playwright:install --workspace=@greenhouse-bot/cli",
-    "install:all": "npm install && npm run build:core && npm run build:cli && npm run build:lambda"
+    "start": "npm run",
+    "dev": "npm run:dev",
+    "test:job": "tsx src/test.ts",
+    "playwright:install": "playwright install chromium",
+    "install:all": "npm install && npm run build:core && npm run build:lambda",
+    "run": "tsc && node dist/index.js",
+    "run:dev": "tsx src/index.ts"
   },
   "keywords": [
     "greenhouse",
@@ -29,6 +30,12 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.10.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "tsx": "^4.7.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "openai": "^4.104.0",
+    "playwright": "^1.40.0"
   }
 }

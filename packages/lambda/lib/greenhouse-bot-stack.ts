@@ -5,6 +5,8 @@ import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -96,6 +98,15 @@ export class GreenhouseBotStack extends cdk.Stack {
       });
     }
 
+    // Create Dead Letter Queue (DLQ) for failed applications
+    const dlq = new sqs.Queue(this, 'FailedApplicationsDLQ', {
+      queueName: `greenhouse-bot-failed-applications-${this.account}-${this.region}`,
+      retentionPeriod: cdk.Duration.days(14), // Keep messages for 14 days
+      visibilityTimeout: cdk.Duration.seconds(30), // Allow time for processing
+      receiveMessageWaitTime: cdk.Duration.seconds(0), // Standard queue (not long polling)
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     // Create Lambda layer for Playwright (if ARN not provided, create instructions)
     let playwrightLayer: lambda.ILayerVersion | undefined;
     
@@ -134,6 +145,7 @@ export class GreenhouseBotStack extends cdk.Stack {
         RESUME_PATH: '/opt/resume/MacAndersonUcheCVAB.pdf',
         CONTEXT_BUCKET_NAME: contextBucket.bucketName,
         CONTEXT_S3_KEY: 'browser-context/.browser-context',
+        DLQ_URL: dlq.queueUrl,
         NODE_ENV: 'production',
         // OpenAI API key will be stored in Secrets Manager (see below)
       },
@@ -146,6 +158,9 @@ export class GreenhouseBotStack extends cdk.Stack {
 
     // Grant Lambda permission to read/write browser context from S3 bucket
     contextBucket.grantReadWrite(greenhouseBotFunction);
+
+    // Grant Lambda permission to send messages to DLQ
+    dlq.grantSendMessages(greenhouseBotFunction);
 
     // Store OpenAI API key in Secrets Manager (if provided)
     if (props?.openaiApiKey) {
@@ -206,6 +221,16 @@ export class GreenhouseBotStack extends cdk.Stack {
         ? 'Playwright layer configured' 
         : 'Please create Playwright layer manually and update stack props',
       description: 'Playwright layer status',
+    });
+
+    new cdk.CfnOutput(this, 'DLQUrl', {
+      value: dlq.queueUrl,
+      description: 'Dead Letter Queue URL for failed applications (can be redriven)',
+    });
+
+    new cdk.CfnOutput(this, 'DLQArn', {
+      value: dlq.queueArn,
+      description: 'Dead Letter Queue ARN for failed applications',
     });
   }
 }
