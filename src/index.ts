@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import OpenAI from 'openai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,11 +12,8 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 interface PersonalInfo {
-  firstName: string;
-  lastName: string;
   email: string;
   phone: string;
-  location: string;
 }
 
 interface JobFilters {
@@ -42,7 +40,7 @@ interface Job {
   viewButton?: any; // Playwright ElementHandle for the view button
 }
 
-class GreenhouseAutoApplyBot {
+export class GreenhouseAutoApplyBot {
   private browser: Browser | null = null;
   private page: Page | null = null;
   private context: any = null; // Browser context for tab management
@@ -51,6 +49,8 @@ class GreenhouseAutoApplyBot {
   private coverLetterPath: string;
   private config: Config;
   private contextPath: string;
+  private openai: OpenAI | null = null;
+  private failedSubmissions: Array<{ jobTitle: string; url: string; timestamp: string; reason: string }> = [];
 
   constructor() {
     this.resumePath = process.env.RESUME_PATH || './resume.pdf';
@@ -58,6 +58,18 @@ class GreenhouseAutoApplyBot {
     this.config = this.loadConfig();
     // Store browser context in a local directory
     this.contextPath = path.join(__dirname, '../.browser-context');
+    
+    // Initialize OpenAI if API key is provided
+    // API key must be set in .env file as OPENAI_API_KEY
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    if (openaiApiKey) {
+      this.openai = new OpenAI({
+        apiKey: openaiApiKey,
+      });
+      console.log('✅ OpenAI initialized for text box auto-fill');
+    } else {
+      console.warn('⚠️  OPENAI_API_KEY not found in .env file. Text box auto-fill will be disabled.');
+    }
   }
 
   private loadConfig(): Config {
@@ -69,11 +81,8 @@ class GreenhouseAutoApplyBot {
       console.warn('Config file not found, using defaults');
       return {
         personalInfo: {
-          firstName: process.env.FIRST_NAME || '',
-          lastName: process.env.LAST_NAME || '',
           email: process.env.EMAIL || 'hi@macandersonuche.dev',
           phone: process.env.PHONE || '',
-          location: process.env.LOCATION || '',
         },
         jobFilters: {
           keywords: process.env.JOB_KEYWORDS
@@ -272,18 +281,23 @@ class GreenhouseAutoApplyBot {
       throw new Error('Page not initialized');
     }
 
-    // Navigate directly to jobs page only if needed
+    // Navigate directly to jobs page with search parameters only if needed
     if (shouldNavigate) {
-      console.log('🔍 Navigating to jobs page...');
-      await this.page.goto(`${this.baseURL}/jobs`, {
+      console.log('🔍 Navigating to jobs page with search filters...');
+      // Navigate directly to URL with query parameters from environment variable
+      const searchUrl = process.env.JOBS_SEARCH_URL || `${this.baseURL}/jobs?query=software%20engineer&date_posted=past_five_days&work_type[]=remote`;
+      console.log(`   📍 Using search URL: ${searchUrl}`);
+      await this.page.goto(searchUrl, {
         waitUntil: 'networkidle',
       });
       // Wait for page to load
       await this.page.waitForTimeout(2000);
 
-      // Fill in search form
-      console.log('📝 Filling in search form...');
-      await this.fillSearchForm();
+      // Handle cookie modal if present
+      await this.handleCookieModal();
+
+      // Load ALL jobs before extracting them
+      await this.loadAllJobs();
     } else {
       // Already on jobs page, just wait a bit for any new content
       await this.page.waitForTimeout(1000);
@@ -483,6 +497,80 @@ class GreenhouseAutoApplyBot {
 
       await this.page.waitForTimeout(500);
 
+      // Fill location: "United States" - try both text inputs and select dropdowns
+      console.log('   🌍 Filling location field: United States...');
+      let locationFilled = false;
+      
+      // First try text input fields
+      const locationInputSelectors = [
+        'input[name*="location"]',
+        'input[placeholder*="location" i]',
+        'input[class*="location"]',
+        'input[type="text"][name*="location"]',
+        'input[id*="location"]',
+      ];
+
+      for (const selector of locationInputSelectors) {
+        try {
+          const locationInput = await this.page.$(selector);
+          if (locationInput) {
+            await locationInput.fill('United States');
+            await this.page.waitForTimeout(500);
+            // Trigger input event to ensure the value is recognized
+            await locationInput.evaluate((el) => {
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+            console.log('   ✅ Filled location input: United States');
+            locationFilled = true;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      // If not filled, try select dropdowns
+      if (!locationFilled) {
+        const locationSelectSelectors = [
+          'select[name*="location"]',
+          'select[class*="location"]',
+          'select[id*="location"]',
+        ];
+
+        for (const selector of locationSelectSelectors) {
+          try {
+            const locationSelect = await this.page.$(selector);
+            if (locationSelect) {
+              const options = await locationSelect.$$eval('option', (opts) =>
+                opts.map((opt) => ({ value: opt.value, text: opt.textContent?.trim() || '' }))
+              );
+              
+              // Try to find "United States" option
+              const usOption = options.find((opt) => 
+                /united states|usa|us/i.test(opt.text) || 
+                /united states|usa|us/i.test(opt.value)
+              );
+              
+              if (usOption) {
+                await locationSelect.selectOption(usOption.value);
+                console.log(`   ✅ Selected location: ${usOption.text || 'United States'}`);
+                locationFilled = true;
+                break;
+              }
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+      }
+
+      if (!locationFilled) {
+        console.warn('   ⚠️  Could not find location field to fill');
+      }
+
+      await this.page.waitForTimeout(500);
+
       // Select work type: "remote"
       const workTypeSelectors = [
         'select[name*="work"]',
@@ -551,7 +639,7 @@ class GreenhouseAutoApplyBot {
       }
 
       // Click search button if form was filled
-      if (titleFilled || workTypeSelected || dateSelected) {
+      if (titleFilled || locationFilled || workTypeSelected || dateSelected) {
         await this.page.waitForTimeout(500);
         const searchButtonSelectors = [
           'button[type="submit"]',
@@ -603,11 +691,14 @@ class GreenhouseAutoApplyBot {
         try {
           const moreButton = await this.page.$(selector);
           if (moreButton) {
-            console.log('   📄 Clicking "See more jobs" to load additional jobs...');
-            await moreButton.click();
-            await this.page.waitForTimeout(2000);
-            await this.page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-            return true;
+            const isVisible = await moreButton.isVisible().catch(() => false);
+            if (isVisible) {
+              console.log('   📄 Clicking "See more jobs" to load additional jobs...');
+              await moreButton.click();
+              await this.page.waitForTimeout(2000);
+              await this.page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+              return true;
+            }
           }
         } catch (e) {
           continue;
@@ -630,129 +721,128 @@ class GreenhouseAutoApplyBot {
     }
   }
 
-  async applyToJob(job: Job): Promise<boolean> {
+  async loadAllJobs(): Promise<void> {
+    if (!this.page) {
+      return;
+    }
+
+    console.log('📋 Loading all available jobs...');
+    let previousJobCount = 0;
+    let attempts = 0;
+    const maxAttempts = 50; // Prevent infinite loops
+
+    while (attempts < maxAttempts) {
+      // Count current visible jobs
+      const currentJobs = await this.page.$$('a[href*="/jobs/"], button:has-text("View job"), a:has-text("View job"), button:has-text("View Job"), a:has-text("View Job")');
+      const currentJobCount = currentJobs.length;
+
+      console.log(`   📊 Currently visible jobs: ${currentJobCount}`);
+
+      // If job count hasn't increased, we've loaded all jobs
+      if (currentJobCount === previousJobCount && previousJobCount > 0) {
+        console.log('   ✅ All jobs loaded!');
+        break;
+      }
+
+      previousJobCount = currentJobCount;
+
+      // Try to load more jobs
+      const hasMore = await this.loadMoreJobs();
+      
+      if (!hasMore) {
+        // Wait a bit and check again
+        await this.page.waitForTimeout(2000);
+        const finalCheck = await this.page.$$('a[href*="/jobs/"], button:has-text("View job"), a:has-text("View job"), button:has-text("View Job"), a:has-text("View Job")');
+        if (finalCheck.length === currentJobCount) {
+          console.log('   ✅ All jobs loaded!');
+          break;
+        }
+      }
+
+      attempts++;
+    }
+
+    if (attempts >= maxAttempts) {
+      console.log('   ⚠️  Reached maximum attempts, proceeding with currently loaded jobs');
+    }
+
+    const finalJobs = await this.page.$$('a[href*="/jobs/"], button:has-text("View job"), a:has-text("View job"), button:has-text("View Job"), a:has-text("View Job")');
+    console.log(`\n✅ Total jobs loaded: ${finalJobs.length}\n`);
+  }
+
+  /**
+   * Apply to a job by URL - can be called independently for testing
+   * @param jobUrl - The URL of the job application page
+   * @param jobTitle - Optional job title for logging and tracking
+   * @returns Promise<boolean> - true if application was successful, false otherwise
+   */
+  async applyToJobByUrl(jobUrl: string, jobTitle: string = 'Software Engineer'): Promise<boolean> {
     if (!this.page || !this.context) {
-      throw new Error('Page or context not initialized');
+      throw new Error('Page or context not initialized. Call initializeBrowser() first.');
     }
 
     try {
-      console.log(`\n📝 Processing: ${job.title}`);
+      console.log(`\n📝 Processing job application: ${jobTitle}`);
+      console.log(`   🔗 URL: ${jobUrl}`);
       
-      // Get the current number of pages before clicking
-      const pagesBefore = this.context.pages();
-      const initialPageCount = pagesBefore.length;
-      
-      // If we have a view button, click it to navigate to the job page
-      if (job.viewButton) {
-        console.log('   🔗 Clicking "View Job" button...');
-        
-        // Click the button (may open in new tab)
-        await job.viewButton.click();
-        await this.page.waitForTimeout(2000);
-        
-        // Wait for new tab to open if it opens in a new tab
-        let jobPage = this.page;
-        const maxWaitTime = 5000; // 5 seconds max wait
-        const startTime = Date.now();
-        
-        while (Date.now() - startTime < maxWaitTime) {
-          const currentPages = this.context.pages();
-          if (currentPages.length > initialPageCount) {
-            // New tab opened, switch to it
-            jobPage = currentPages[currentPages.length - 1];
-            await jobPage.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
-            console.log('   ✅ New tab opened, switched to job page');
-            break;
-          }
-          await this.page.waitForTimeout(500);
-        }
-        
-        // Wait for page to load
-        await jobPage.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-        await jobPage.waitForTimeout(2000);
-        
-        // Use the job page for finding apply button
-        this.page = jobPage;
+      // Navigate to the job URL
+      await this.page.goto(jobUrl, { waitUntil: 'networkidle' });
+      await this.page.waitForTimeout(2000);
 
-        // Click into a text box to trigger auto-fill settings
-        console.log('   📝 Clicking into text box to trigger auto-fill...');
-        try {
-          const textBoxSelectors = [
-            'input[type="text"]',
-            'textarea',
-            'input[name*="name"]',
-            'input[name*="email"]',
-            'input[class*="input"]',
-            '[contenteditable="true"]',
-          ];
+      // Perform the application process
+      return await this.performJobApplication(jobTitle);
+    } catch (error) {
+      console.error(`   ❌ Error applying to job: ${error}`);
+      return false;
+    }
+  }
 
-          for (const selector of textBoxSelectors) {
-            try {
-              const textBox = await this.page.$(selector);
-              if (textBox) {
-                await textBox.click();
-                await this.page.waitForTimeout(500);
-                console.log('   ✅ Clicked text box, auto-fill should trigger');
-                break;
-              }
-            } catch (e) {
-              continue;
+  /**
+   * Core job application logic - extracted for reuse
+   * @param jobTitle - Job title for logging and tracking
+   * @returns Promise<boolean> - true if application was successful, false otherwise
+   */
+  private async performJobApplication(jobTitle: string): Promise<boolean> {
+    if (!this.page) {
+      throw new Error('Page not initialized');
+    }
+
+    try {
+      // Click into a text box to trigger auto-fill settings
+      console.log('   📝 Clicking into text box to trigger auto-fill...');
+      try {
+        const textBoxSelectors = [
+          'input[type="text"]',
+          'textarea',
+          'input[name*="name"]',
+          'input[name*="email"]',
+          'input[class*="input"]',
+          '[contenteditable="true"]',
+        ];
+
+        for (const selector of textBoxSelectors) {
+          try {
+            const textBox = await this.page.$(selector);
+            if (textBox) {
+              await textBox.click();
+              await this.page.waitForTimeout(500);
+              console.log('   ✅ Clicked text box, auto-fill should trigger');
+              break;
             }
+          } catch (e) {
+            continue;
           }
-        } catch (error) {
-          console.warn('   ⚠️  Could not find text box to click');
         }
-
-        // Scroll to the end of the page
-        console.log('   📜 Scrolling to end of page...');
-        await this.page.evaluate(() => {
-          window.scrollTo(0, document.body.scrollHeight);
-        });
-        await this.page.waitForTimeout(1000);
-      } else if (job.href && !job.href.startsWith('job-')) {
-        // Fallback: navigate directly if we have a URL
-        await this.page.goto(job.href, { waitUntil: 'networkidle' });
-        await this.page.waitForTimeout(2000);
-
-        // Click into a text box to trigger auto-fill settings
-        console.log('   📝 Clicking into text box to trigger auto-fill...');
-        try {
-          const textBoxSelectors = [
-            'input[type="text"]',
-            'textarea',
-            'input[name*="name"]',
-            'input[name*="email"]',
-            'input[class*="input"]',
-            '[contenteditable="true"]',
-          ];
-
-          for (const selector of textBoxSelectors) {
-            try {
-              const textBox = await this.page.$(selector);
-              if (textBox) {
-                await textBox.click();
-                await this.page.waitForTimeout(500);
-                console.log('   ✅ Clicked text box, auto-fill should trigger');
-                break;
-              }
-            } catch (e) {
-              continue;
-            }
-          }
-        } catch (error) {
-          console.warn('   ⚠️  Could not find text box to click');
-        }
-
-        // Scroll to the end of the page
-        console.log('   📜 Scrolling to end of page...');
-        await this.page.evaluate(() => {
-          window.scrollTo(0, document.body.scrollHeight);
-        });
-        await this.page.waitForTimeout(1000);
-      } else {
-        console.log('   ⚠️  No view button or URL found, skipping...');
-        return false;
+      } catch (error) {
+        console.warn('   ⚠️  Could not find text box to click');
       }
+
+      // Scroll to the end of the page
+      console.log('   📜 Scrolling to end of page...');
+      await this.page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+      await this.page.waitForTimeout(1000);
 
       // Look for apply button
       const applySelectors = [
@@ -796,6 +886,9 @@ class GreenhouseAutoApplyBot {
         return false;
       }
 
+      // Handle cookie modal if present before applying
+      await this.handleCookieModal();
+
       // Click apply button to open application form
       await applyButton.click();
       await this.page.waitForTimeout(2000);
@@ -806,8 +899,14 @@ class GreenhouseAutoApplyBot {
       console.log('   ⏳ Waiting for form to fully load...');
       await this.page.waitForTimeout(3000);
 
-      // Check and tick all required checkboxes
-      console.log('   ☑️  Checking required checkboxes...');
+      // Handle cookie modal again in case it appears after navigation
+      await this.handleCookieModal();
+
+      // Fill required text boxes using OpenAI
+      await this.fillRequiredTextFields();
+
+      // Check and tick all required checkboxes and multi-select options
+      console.log('   ☑️  Checking required checkboxes and multi-select options...');
       try {
         const checkboxSelectors = [
           'input[type="checkbox"][required]',
@@ -831,6 +930,42 @@ class GreenhouseAutoApplyBot {
                 if (!isChecked && isRequired) {
                   await checkbox.check();
                   console.log('   ✅ Checked required checkbox');
+                  await this.page.waitForTimeout(500);
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+
+        // Handle multi-select dropdowns - select "yes" or positive options
+        console.log('   📋 Checking multi-select options...');
+        const multiSelectSelectors = [
+          'select[multiple]',
+          'select[class*="multi"]',
+        ];
+
+        for (const selector of multiSelectSelectors) {
+          try {
+            const selects = await this.page.$$(selector);
+            for (const select of selects) {
+              try {
+                const options = await select.$$eval('option', (opts) =>
+                  opts.map((opt) => ({ value: opt.value, text: opt.textContent?.trim() || '' }))
+                );
+                
+                // Find "yes" or positive options
+                const positiveOption = options.find((opt) => 
+                  /yes|agree|accept|true|available|eligible/i.test(opt.text) ||
+                  /yes|agree|accept|true|available|eligible/i.test(opt.value)
+                );
+                
+                if (positiveOption && positiveOption.value) {
+                  await select.selectOption(positiveOption.value);
+                  console.log(`   ✅ Selected positive option: ${positiveOption.text}`);
                   await this.page.waitForTimeout(500);
                 }
               } catch (e) {
@@ -936,36 +1071,69 @@ class GreenhouseAutoApplyBot {
         await submitButton.click();
         await this.page.waitForTimeout(2000);
         
-        // Wait for submission confirmation
-        console.log('   ⏳ Waiting for submission confirmation...');
+        // Wait for submission confirmation with 1 minute timeout
+        console.log('   ⏳ Waiting for submission confirmation (max 1 minute)...');
+        const submissionStartTime = Date.now();
+        const timeoutMs = 60000; // 1 minute
+        
         try {
-          // Look for success indicators
-          await Promise.race([
-            this.page.waitForSelector('text=/success|submitted|thank you|application received/i', { timeout: 10000 }),
-            this.page.waitForSelector('[class*="success"]', { timeout: 10000 }),
-            this.page.waitForSelector('[class*="submitted"]', { timeout: 10000 }),
-            this.page.waitForURL(/success|submitted|thank/i, { timeout: 10000 }),
-          ]).catch(() => {
-            // If no explicit success indicator, wait a bit more
-            console.log('   ⏳ No explicit success indicator found, waiting for form to process...');
-          });
+          // Look for success indicators with timeout
+          const successPromise = Promise.race([
+            this.page.waitForSelector('text=/success|submitted|thank you|application received/i', { timeout: timeoutMs }),
+            this.page.waitForSelector('[class*="success"]', { timeout: timeoutMs }),
+            this.page.waitForSelector('[class*="submitted"]', { timeout: timeoutMs }),
+            this.page.waitForURL(/success|submitted|thank/i, { timeout: timeoutMs }),
+          ]);
+
+          await successPromise;
           
           await this.page.waitForTimeout(2000);
           submissionSuccessful = true;
           console.log('   ✅ Application submitted successfully');
         } catch (error) {
-          console.warn('   ⚠️  Could not confirm submission');
-          // Check for error messages
-          try {
-            const errorMessages = await this.page.$$('text=/error|invalid|required|missing/i');
-            if (errorMessages.length > 0) {
-              console.log('   ❌ Error messages found, submission may have failed');
-              submissionSuccessful = false;
-            } else {
-              submissionSuccessful = true; // Assume success if no errors found
+          const elapsedTime = Date.now() - submissionStartTime;
+          
+          if (elapsedTime >= timeoutMs) {
+            console.log('   ⏱️  Submission timeout after 1 minute');
+            submissionSuccessful = false;
+            
+            // Record failed submission
+            const jobUrl = this.page.url();
+            this.failedSubmissions.push({
+              jobTitle: jobTitle,
+              url: jobUrl,
+              timestamp: new Date().toISOString(),
+              reason: 'Submission timeout after 1 minute'
+            });
+            
+            // Write to JSON file
+            await this.saveFailedSubmissions();
+          } else {
+            console.warn('   ⚠️  Could not confirm submission');
+            // Check for error messages
+            try {
+              const errorMessages = await this.page.$$('text=/error|invalid|required|missing/i');
+              if (errorMessages.length > 0) {
+                console.log('   ❌ Error messages found, submission may have failed');
+                submissionSuccessful = false;
+                
+                // Record failed submission
+                const jobUrl = this.page.url();
+                this.failedSubmissions.push({
+                  jobTitle: jobTitle,
+                  url: jobUrl,
+                  timestamp: new Date().toISOString(),
+                  reason: 'Error messages found on page'
+                });
+                
+                // Write to JSON file
+                await this.saveFailedSubmissions();
+              } else {
+                submissionSuccessful = true; // Assume success if no errors found
+              }
+            } catch (e) {
+              submissionSuccessful = true; // Assume success on error
             }
-          } catch (e) {
-            submissionSuccessful = true; // Assume success on error
           }
         }
       }
@@ -989,11 +1157,472 @@ class GreenhouseAutoApplyBot {
         return true;
       } else {
         console.log('   ❌ Submission unsuccessful, keeping tab open for manual review');
+        
+        // Record failed submission if not already recorded
+        const alreadyRecorded = this.failedSubmissions.some(f => f.jobTitle === jobTitle);
+        if (!alreadyRecorded) {
+          const jobUrl = this.page ? this.page.url() : 'unknown';
+          this.failedSubmissions.push({
+            jobTitle: jobTitle,
+            url: jobUrl,
+            timestamp: new Date().toISOString(),
+            reason: 'Submission unsuccessful - no success confirmation'
+          });
+          
+          // Write to JSON file
+          await this.saveFailedSubmissions();
+        }
+        
         return false;
       }
     } catch (error) {
+      console.error(`   ❌ Error in application process: ${error}`);
+      return false;
+    }
+  }
+
+  async applyToJob(job: Job): Promise<boolean> {
+    if (!this.page || !this.context) {
+      throw new Error('Page or context not initialized');
+    }
+
+    try {
+      console.log(`\n📝 Processing: ${job.title}`);
+      
+      // Get the current number of pages before clicking
+      const pagesBefore = this.context.pages();
+      const initialPageCount = pagesBefore.length;
+      
+      // If we have a view button, click it to navigate to the job page
+      if (job.viewButton) {
+        console.log('   🔗 Clicking "View Job" button...');
+        
+        // Click the button (may open in new tab)
+        await job.viewButton.click();
+        await this.page.waitForTimeout(2000);
+        
+        // Wait for new tab to open if it opens in a new tab
+        let jobPage = this.page;
+        const maxWaitTime = 5000; // 5 seconds max wait
+        const startTime = Date.now();
+        
+        while (Date.now() - startTime < maxWaitTime) {
+          const currentPages = this.context.pages();
+          if (currentPages.length > initialPageCount) {
+            // New tab opened, switch to it
+            jobPage = currentPages[currentPages.length - 1];
+            await jobPage.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+            console.log('   ✅ New tab opened, switched to job page');
+            break;
+          }
+          await this.page.waitForTimeout(500);
+        }
+        
+        // Wait for page to load
+        await jobPage.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+        await jobPage.waitForTimeout(2000);
+        
+        // Use the job page for finding apply button
+        this.page = jobPage;
+      } else if (job.href && !job.href.startsWith('job-')) {
+        // Fallback: navigate directly if we have a URL
+        await this.page.goto(job.href, { waitUntil: 'networkidle' });
+        await this.page.waitForTimeout(2000);
+      } else {
+        console.log('   ⚠️  No view button or URL found, skipping...');
+        return false;
+      }
+
+      // Use the extracted application logic
+      return await this.performJobApplication(job.title);
+    } catch (error) {
       console.error(`   ❌ Error applying to job: ${error}`);
       return false;
+    }
+  }
+
+  async saveFailedSubmissions(): Promise<void> {
+    try {
+      const failedSubmissionsPath = path.join(__dirname, '..', 'failed-submissions.json');
+      const data = {
+        totalFailed: this.failedSubmissions.length,
+        submissions: this.failedSubmissions,
+        lastUpdated: new Date().toISOString()
+      };
+      await fs.writeFile(failedSubmissionsPath, JSON.stringify(data, null, 2), 'utf8');
+      console.log(`   💾 Saved ${this.failedSubmissions.length} failed submission(s) to failed-submissions.json`);
+    } catch (error) {
+      console.warn('   ⚠️  Could not save failed submissions to file:', error);
+    }
+  }
+
+  async handleCookieModal(): Promise<void> {
+    if (!this.page) {
+      return;
+    }
+
+    try {
+      // Wait a bit for modal to appear
+      await this.page.waitForTimeout(1000);
+
+      // Look for cookie consent buttons/modals
+      const cookieButtonSelectors = [
+        'button:has-text("Accept All")',
+        'button:has-text("Accept all")',
+        'button:has-text("Accept")',
+        'button[id*="accept"]',
+        'button[class*="accept"]',
+        'button[class*="cookie"]:has-text("Accept")',
+        '[data-testid*="accept"]',
+        '[data-testid*="cookie"]:has-text("Accept")',
+        'a:has-text("Accept All")',
+        'a:has-text("Accept")',
+        '[role="button"]:has-text("Accept")',
+      ];
+
+      for (const selector of cookieButtonSelectors) {
+        try {
+          const cookieButton = await this.page.$(selector);
+          if (cookieButton) {
+            const isVisible = await cookieButton.isVisible().catch(() => false);
+            if (isVisible) {
+              await cookieButton.click();
+              await this.page.waitForTimeout(500);
+              console.log('   🍪 Clicked cookie accept button');
+              return; // Successfully handled
+            }
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      // Also try to find modal/dialog and look for accept button inside
+      const modalSelectors = [
+        '[role="dialog"]',
+        '[class*="modal"]',
+        '[class*="cookie"]',
+        '[id*="cookie"]',
+        '[id*="consent"]',
+      ];
+
+      for (const modalSelector of modalSelectors) {
+        try {
+          const modal = await this.page.$(modalSelector);
+          if (modal) {
+            const isVisible = await modal.isVisible().catch(() => false);
+            if (isVisible) {
+              // Look for accept button within the modal
+              const acceptButton = await modal.$('button:has-text("Accept"), button:has-text("Accept All"), a:has-text("Accept")');
+              if (acceptButton) {
+                await acceptButton.click();
+                await this.page.waitForTimeout(500);
+                console.log('   🍪 Clicked cookie accept button in modal');
+                return;
+              }
+            }
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+    } catch (error) {
+      // Silently fail - cookie modal might not be present
+    }
+  }
+
+  async generateAnswer(question: string, fieldType: string = 'text'): Promise<string> {
+    if (!this.openai) {
+      return '';
+    }
+
+    try {
+      // Read resume PDF content
+      const resumePath = path.join(__dirname, '..', 'MacAndersonUcheCVAB.pdf');
+      let resumeContent = '';
+      
+      try {
+        // Try to read PDF as text (basic approach - may need PDF parser for better extraction)
+        const resumeBuffer = await fs.readFile(resumePath);
+        // Convert buffer to text (basic extraction, PDFs need proper parsing)
+        resumeContent = resumeBuffer.toString('utf-8', 0, Math.min(10000, resumeBuffer.length));
+        // Clean up non-printable characters
+        resumeContent = resumeContent.replace(/[^\x20-\x7E\n\r]/g, ' ').substring(0, 5000);
+      } catch (error) {
+        console.warn(`   ⚠️  Could not read resume PDF: ${error}`);
+        // Fallback: use a simple prompt without resume
+        resumeContent = 'Software engineer with experience in full-stack development';
+      }
+
+      const systemPrompt = `You are a helpful assistant that helps fill out job application forms. 
+Generate concise, professional answers based on the candidate's resume information.
+
+Resume content (extracted from PDF):
+${resumeContent}
+
+Work Authorization Information:
+- British citizen
+- Can work anywhere (globally)
+- Requires sponsorship to work in the United States
+
+Keep answers brief (1-3 sentences for most questions, up to 100 words for longer responses).
+Be professional and relevant to the question asked. Use information from the resume to answer questions about experience, skills, and background.
+For work authorization questions, mention that you are a British citizen who can work anywhere but require sponsorship for US positions.`;
+
+      const userPrompt = `Field type: ${fieldType}
+Question/Label: ${question}
+
+Generate an appropriate answer for this job application field based on the resume information provided.`;
+
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 150,
+        temperature: 0.7,
+      });
+
+      const answer = completion.choices[0]?.message?.content?.trim() || '';
+      
+      // Check if the response is uncertain or unclear
+      if (!answer) {
+        return 'Not available';
+      }
+      
+      // Check for uncertain phrases in the response
+      const uncertainPhrases = [
+        /i'm not sure/i,
+        /i don't know/i,
+        /i cannot/i,
+        /i'm unable/i,
+        /i don't have/i,
+        /unclear/i,
+        /uncertain/i,
+        /not certain/i,
+        /cannot determine/i,
+        /unable to/i,
+        /i'm not certain/i,
+        /i'm unsure/i,
+        /i don't have enough/i,
+        /insufficient information/i,
+        /not enough information/i,
+      ];
+      
+      const isUncertain = uncertainPhrases.some(phrase => phrase.test(answer));
+      
+      if (isUncertain) {
+        console.log('   ⚠️  AI response was uncertain, using "Not sure"');
+        return 'Not sure';
+      }
+      
+      // Check if response is too generic or vague (very short or just repeats the question)
+      if (answer.length < 10 || answer.toLowerCase() === question.toLowerCase().substring(0, answer.length)) {
+        console.log('   ⚠️  AI response was too generic, using "Not available"');
+        return 'Not available';
+      }
+      
+      return answer;
+    } catch (error) {
+      console.warn(`   ⚠️  Error generating answer with OpenAI: ${error}`);
+      return 'Not available';
+    }
+  }
+
+  async fillRequiredTextFields(): Promise<void> {
+    if (!this.page) {
+      return;
+    }
+
+    if (!this.openai) {
+      console.log('   ⚠️  OpenAI not configured, skipping text field auto-fill');
+      return;
+    }
+
+    try {
+      console.log('   ✍️  Finding and filling required text fields...');
+      
+      // Find all text input fields and textareas
+      const textFieldSelectors = [
+        'input[type="text"][required]',
+        'input[type="email"][required]',
+        'textarea[required]',
+        'input[required]:not([type="checkbox"]):not([type="radio"]):not([type="file"])',
+        'textarea[aria-required="true"]',
+        'input[aria-required="true"]:not([type="checkbox"]):not([type="radio"]):not([type="file"])',
+      ];
+
+      const filledFields: string[] = [];
+
+      for (const selector of textFieldSelectors) {
+        try {
+          const fields = await this.page.$$(selector);
+          for (const field of fields) {
+            try {
+              // Check if field is already filled
+              const currentValue = await field.inputValue();
+              if (currentValue && currentValue.trim().length > 0) {
+                continue; // Skip already filled fields
+              }
+
+              // Get field information
+              const fieldInfo = await field.evaluate((el) => {
+                const input = el as HTMLInputElement | HTMLTextAreaElement;
+                const id = input.id;
+                const name = input.name;
+                const placeholder = input.placeholder;
+                const type = input.type;
+                
+                // Find label
+                let labelText = '';
+                if (id) {
+                  const label = document.querySelector(`label[for="${id}"]`);
+                  if (label) {
+                    labelText = label.textContent?.trim() || '';
+                  }
+                }
+                if (!labelText) {
+                  const parentLabel = input.closest('label');
+                  if (parentLabel) {
+                    labelText = parentLabel.textContent?.trim() || '';
+                  }
+                }
+                if (!labelText) {
+                  const prevLabel = input.previousElementSibling;
+                  if (prevLabel && prevLabel.tagName === 'LABEL') {
+                    labelText = prevLabel.textContent?.trim() || '';
+                  }
+                }
+
+                return {
+                  id,
+                  name,
+                  placeholder,
+                  type,
+                  label: labelText,
+                };
+              });
+
+              // Determine question text
+              const questionText = fieldInfo.label || fieldInfo.placeholder || fieldInfo.name || 'text field';
+              
+              // Skip if we've already filled this field (by name/id)
+              const fieldKey = fieldInfo.name || fieldInfo.id || questionText;
+              if (filledFields.includes(fieldKey)) {
+                continue;
+              }
+
+              // Generate answer using OpenAI
+              console.log(`   🤖 Generating answer for: ${questionText}`);
+              const answer = await this.generateAnswer(questionText, fieldInfo.type || 'text');
+
+              if (answer) {
+                await field.fill(answer);
+                await this.page.waitForTimeout(500);
+                filledFields.push(fieldKey);
+                console.log(`   ✅ Filled field "${questionText}"`);
+              } else {
+                console.log(`   ⚠️  Could not generate answer for "${questionText}"`);
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      // Also check for fields with asterisks in labels (common required indicator)
+      try {
+        const allTextFields = await this.page.$$('input[type="text"], input[type="email"], textarea');
+        for (const field of allTextFields) {
+          try {
+            const currentValue = await field.inputValue();
+            if (currentValue && currentValue.trim().length > 0) {
+              continue;
+            }
+
+            // Check if label has asterisk (indicates required)
+            const hasRequiredIndicator = await field.evaluate((el) => {
+              const input = el as HTMLInputElement | HTMLTextAreaElement;
+              const id = input.id;
+              
+              if (id) {
+                const label = document.querySelector(`label[for="${id}"]`);
+                if (label && label.textContent?.includes('*')) {
+                  return true;
+                }
+              }
+              
+              const parentLabel = input.closest('label');
+              if (parentLabel && parentLabel.textContent?.includes('*')) {
+                return true;
+              }
+              
+              return false;
+            });
+
+            if (hasRequiredIndicator) {
+              const fieldInfo = await field.evaluate((el) => {
+                const input = el as HTMLInputElement | HTMLTextAreaElement;
+                const id = input.id;
+                const name = input.name;
+                const placeholder = input.placeholder;
+                
+                let labelText = '';
+                if (id) {
+                  const label = document.querySelector(`label[for="${id}"]`);
+                  if (label) {
+                    labelText = label.textContent?.trim() || '';
+                  }
+                }
+                if (!labelText) {
+                  const parentLabel = input.closest('label');
+                  if (parentLabel) {
+                    labelText = parentLabel.textContent?.trim() || '';
+                  }
+                }
+
+                return {
+                  id,
+                  name,
+                  placeholder,
+                  label: labelText,
+                };
+              });
+
+              const questionText = fieldInfo.label || fieldInfo.placeholder || fieldInfo.name || 'text field';
+              const fieldKey = fieldInfo.name || fieldInfo.id || questionText;
+              
+              if (!filledFields.includes(fieldKey)) {
+                console.log(`   🤖 Generating answer for required field: ${questionText}`);
+                const answer = await this.generateAnswer(questionText, 'text');
+                
+                if (answer) {
+                  await field.fill(answer);
+                  await this.page.waitForTimeout(500);
+                  filledFields.push(fieldKey);
+                  console.log(`   ✅ Filled required field "${questionText}"`);
+                }
+              }
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+      } catch (error) {
+        console.warn('   ⚠️  Error checking fields with asterisks:', error);
+      }
+
+      if (filledFields.length > 0) {
+        console.log(`   ✅ Filled ${filledFields.length} text field(s) using AI`);
+      } else {
+        console.log('   ℹ️  No required text fields found or all were already filled');
+      }
+    } catch (error) {
+      console.warn('   ⚠️  Error filling required text fields:', error);
     }
   }
 
@@ -1069,64 +1698,48 @@ class GreenhouseAutoApplyBot {
       // Apply to each matching job (always enabled)
       console.log('\n🎯 Starting auto-apply process...\n');
       const maxJobs = this.config.applicationSettings.maxApplicationsPerRun;
-      let totalProcessed = 0;
-      let allJobsProcessed = false;
+      
+      // Get all jobs (they should already be loaded from searchJobs)
+      const jobsToApply = jobs.slice(0, maxJobs);
+      console.log(`📋 Processing ${jobsToApply.length} jobs (out of ${jobs.length} total found)...`);
 
-      while (!allJobsProcessed && totalProcessed < maxJobs) {
-        // Get current jobs on screen (only navigate on first iteration)
-        const currentJobs = await this.searchJobs(totalProcessed === 0);
-        
-        if (currentJobs.length === 0) {
-          console.log('   No more jobs found on screen');
-          break;
+      let successCount = 0;
+      for (const job of jobsToApply) {
+        const success = await this.applyToJob(job);
+        if (success) {
+          successCount++;
         }
 
-        const jobsToApply = currentJobs.slice(0, maxJobs - totalProcessed);
-        console.log(`\n📋 Processing ${jobsToApply.length} jobs from current page...`);
-
-        let successCount = 0;
-        for (const job of jobsToApply) {
-          const success = await this.applyToJob(job);
-          if (success) {
-            successCount++;
-            totalProcessed++;
-          }
-
-          // Longer delay between applications to ensure forms are submitted
-          if (jobsToApply.indexOf(job) < jobsToApply.length - 1) {
-            const delay = this.config.applicationSettings.delayBetweenApplications;
-            console.log(`\n⏳ Waiting ${delay}ms before next application...`);
-            await this.sleep(delay);
-          }
-        }
-
-        console.log(`\n✅ Processed ${successCount}/${jobsToApply.length} applications from this page`);
-        console.log(`   Total processed: ${totalProcessed}/${maxJobs}`);
-
-        // After processing all jobs on screen, try to load more
-        if (totalProcessed < maxJobs) {
-          const hasMoreJobs = await this.loadMoreJobs();
-          if (!hasMoreJobs) {
-            console.log('   No more jobs available');
-            allJobsProcessed = true;
-          } else {
-            console.log('   ⏳ Waiting for more jobs to load...');
-            await this.sleep(3000);
-          }
-        } else {
-          allJobsProcessed = true;
+        // Longer delay between applications to ensure forms are submitted
+        if (jobsToApply.indexOf(job) < jobsToApply.length - 1) {
+          const delay = this.config.applicationSettings.delayBetweenApplications;
+          console.log(`\n⏳ Waiting ${delay}ms before next application...`);
+          await this.sleep(delay);
         }
       }
 
+      console.log(`\n✅ Processed ${successCount}/${jobsToApply.length} applications`);
+
       console.log(
-        `\n✅ Completed! Successfully processed ${totalProcessed} applications`
+        `\n✅ Completed! Successfully processed ${successCount} applications`
       );
 
       // Keep browser open for a bit so user can see results
       console.log('\n⏳ Keeping browser open for 10 seconds...');
       await this.sleep(10000);
+      
+      // Save any remaining failed submissions
+      if (this.failedSubmissions.length > 0) {
+        await this.saveFailedSubmissions();
+        console.log(`\n📋 Total failed submissions: ${this.failedSubmissions.length}`);
+      }
     } catch (error) {
       console.error('Fatal error:', error);
+      
+      // Save failed submissions even on error
+      if (this.failedSubmissions.length > 0) {
+        await this.saveFailedSubmissions();
+      }
     } finally {
       await this.close();
     }
@@ -1149,4 +1762,5 @@ bot.run().catch((error) => {
   console.error('Fatal error:', error);
   process.exit(1);
 });
+
 

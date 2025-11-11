@@ -1,17 +1,10 @@
 {
   "personalInfo": {
-    "firstName": "John",
-    "lastName": "Doe",
     "email": "john.doe@example.com",
-    "phone": "+1234567890",
-    "location": "San Francisco, CA"
+    "phone": "+1234567890"
   },
   "jobFilters": {
-    "keywords": [
-      "software engineer",
-      "developer",
-      "full stack"
-    ],
+    "keywords": ["software engineer", "developer", "full stack"],
     "departments": [],
     "locations": []
   },
@@ -21,4 +14,3 @@
     "maxApplicationsPerRun": 10
   }
 }
-

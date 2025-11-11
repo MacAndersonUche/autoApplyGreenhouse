@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "tsc && node dist/index.js",
     "dev": "tsc --watch & node --watch dist/index.js",
-    "playwright:install": "playwright install chromium"
+    "playwright:install": "playwright install chromium",
+    "test:job": "tsc && node dist/test.js"
   },
   "keywords": [
     "greenhouse",
@@ -21,6 +22,7 @@
   "license": "MIT",
   "dependencies": {
     "dotenv": "^16.3.1",
+    "openai": "^4.104.0",
     "playwright": "^1.40.0"
   },
   "devDependencies": {
