@@ -1,4 +1,5 @@
-import { chromium, Browser, Page } from 'playwright';
+import { chromium as playwrightChromium, type Browser, type Page, type LaunchOptions } from 'playwright-core';
+import chromiumLambda from '@sparticuz/chromium';
 import dotenv from 'dotenv';
 import fs from 'fs/promises';
 import fsSync from 'fs';
@@ -61,9 +62,7 @@ export class GreenhouseAutoApplyBot {
       console.log('📦 Found saved browser context, attempting to restore...');
       try {
         // Launch browser in headless mode
-        this.browser = await chromium.launch({
-          headless: true,
-        });
+        this.browser = await this.createBrowser();
         
         // Load saved browser context (includes cookies, localStorage, etc.)
         this.context = await this.browser.newContext({
@@ -3052,6 +3051,22 @@ Answer with ONLY "yes" or "no".`;
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async createBrowser(): Promise<Browser> {
+    const launchOptions: LaunchOptions = {
+      headless: true,
+    };
+
+    const isLambda = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.AWS_EXECUTION_ENV);
+
+    if (isLambda) {
+      launchOptions.args = chromiumLambda.args;
+      launchOptions.executablePath = await chromiumLambda.executablePath();
+      launchOptions.headless = chromiumLambda.headless;
+    }
+
+    return playwrightChromium.launch(launchOptions);
   }
 }
 

@@ -106,9 +106,8 @@ export class GreenhouseBotStack extends Stack {
           image: Runtime.NODEJS_22_X.bundlingImage,
           command: ['bash', '-c', [
             'npm install',
-            'mkdir -p /asset-output/nodejs/node_modules',
-            'PLAYWRIGHT_BROWSERS_PATH=/asset-output/nodejs/node_modules/.cache/ms-playwright npx playwright install chromium',
-            'cp -R node_modules /asset-output/nodejs/',
+            'mkdir -p /asset-output/nodejs',
+            'cp -R package*.json node_modules /asset-output/nodejs/',
           ].join(' && ')],
         },
       }),
@@ -129,8 +128,8 @@ export class GreenhouseBotStack extends Stack {
         sourceMap: true,
         minify: true,
         externalModules: [
-          'playwright',
           'playwright-core',
+          '@sparticuz/chromium',
           'chromium-bidi',
           'chromium-bidi/lib/cjs/bidiMapper/BidiMapper',
           'chromium-bidi/lib/cjs/cdp/CdpConnection',
