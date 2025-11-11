@@ -6,10 +6,12 @@ import {
   CfnOutput,
 } from 'aws-cdk-lib';
 import {
-  Function,
   Runtime,
-  Code,
 } from 'aws-cdk-lib/aws-lambda';
+import {
+  NodejsFunction,
+  OutputFormat,
+} from 'aws-cdk-lib/aws-lambda-nodejs';
 import {
   RestApi,
   Cors,
@@ -22,7 +24,6 @@ import {
   BillingMode,
 } from 'aws-cdk-lib/aws-dynamodb';
 import {
-  LogGroup,
   RetentionDays,
 } from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
@@ -35,24 +36,6 @@ export interface ApiStackProps extends StackProps {
 export class ApiStack extends Stack {
   constructor(scope: Construct, id: string, props?: ApiStackProps) {
     super(scope, id, props);
-
-    const codeAsset = Code.fromAsset(path.join(__dirname, '../../'), {
-      exclude: [
-        'node_modules',
-        'cdk/node_modules',
-        'cdk/cdk.out',
-        '*.ts',
-        '*.ts.map',
-        '*.d.ts',
-        '!dist/**/*',
-        '.git',
-        '.gitignore',
-        '*.md',
-        'failed-*.json',
-        'frontend/**/*',
-        'src/**/*',
-      ],
-    });
 
     const failedJobsTable = new Table(this, 'FailedJobsTable', {
       tableName: `greenhouse-bot-failed-jobs-${this.account}-${this.region}`,
@@ -69,32 +52,38 @@ export class ApiStack extends Stack {
       sortKey: { name: 'timestamp', type: AttributeType.STRING },
     });
 
-    const logGroup = new LogGroup(this, 'ApiLogGroup', {
-      logGroupName: `/aws/lambda/greenhouse-bot-api`,
-      retention: RetentionDays.ONE_WEEK,
-      removalPolicy: RemovalPolicy.DESTROY,
-    });
-
-    const runBotFunction = new Function(this, 'RunBotFunction', {
-      runtime: Runtime.NODEJS_20_X,
-      handler: 'dist/api/run-bot.handler',
-      code: codeAsset,
+    const runBotFunction = new NodejsFunction(this, 'RunBotFunction', {
+      runtime: Runtime.NODEJS_22_X,
+      entry: path.join(__dirname, '../../src/api/run-bot.ts'),
+      handler: 'handler',
       timeout: Duration.minutes(15),
       memorySize: 2048,
-      logGroup,
+      logRetention: RetentionDays.ONE_WEEK,
+      bundling: {
+        format: OutputFormat.ESM,
+        target: 'node22',
+        sourceMap: true,
+        minify: true,
+      },
       environment: {
         FAILED_JOBS_TABLE_NAME: failedJobsTable.tableName,
         ...(props?.openaiApiKey && { OPENAI_API_KEY: props.openaiApiKey }),
       },
     });
 
-    const failedJobsFunction = new Function(this, 'FailedJobsFunction', {
-      runtime: Runtime.NODEJS_20_X,
-      handler: 'dist/api/failed-jobs.handler',
-      code: codeAsset,
+    const failedJobsFunction = new NodejsFunction(this, 'FailedJobsFunction', {
+      runtime: Runtime.NODEJS_22_X,
+      entry: path.join(__dirname, '../../src/api/failed-jobs.ts'),
+      handler: 'handler',
       timeout: Duration.seconds(30),
       memorySize: 256,
-      logGroup,
+      logRetention: RetentionDays.ONE_WEEK,
+      bundling: {
+        format: OutputFormat.ESM,
+        target: 'node22',
+        sourceMap: true,
+        minify: true,
+      },
       environment: {
         FAILED_JOBS_TABLE_NAME: failedJobsTable.tableName,
       },

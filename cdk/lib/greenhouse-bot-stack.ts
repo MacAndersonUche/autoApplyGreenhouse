@@ -6,11 +6,13 @@ import {
   CfnOutput,
 } from 'aws-cdk-lib';
 import {
-  Function,
   Runtime,
-  Code,
   LayerVersion,
 } from 'aws-cdk-lib/aws-lambda';
+import {
+  NodejsFunction,
+  OutputFormat,
+} from 'aws-cdk-lib/aws-lambda-nodejs';
 import {
   Rule,
   Schedule,
@@ -33,7 +35,6 @@ import {
   ITable,
 } from 'aws-cdk-lib/aws-dynamodb';
 import {
-  LogGroup,
   RetentionDays,
 } from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
@@ -54,19 +55,16 @@ export class GreenhouseBotStack extends Stack {
     const memorySize = 2048;
     const jobsSearchUrlOneDay = 'https://my.greenhouse.io/jobs?query=software%20engineer%20&date_posted=past_day&work_type[]=remote';
 
-    // DynamoDB table for failed jobs (or reference existing)
     let failedJobsTable: ITable;
     let isNewTable = false;
     
     if (props?.failedJobsTableName) {
-      // Reference existing table from another stack
       failedJobsTable = Table.fromTableName(
         this,
         'FailedJobsTableRef',
         props.failedJobsTableName
       );
     } else {
-      // Create new table
       const newTable = new Table(this, 'FailedJobsTable', {
         tableName: `greenhouse-bot-failed-jobs-${this.account}-${this.region}`,
         partitionKey: { name: 'id', type: AttributeType.STRING },
@@ -97,40 +95,24 @@ export class GreenhouseBotStack extends Stack {
       }],
     });
 
-    // CloudWatch Log Group
-    const logGroup = new LogGroup(this, 'BotLogGroup', {
-      logGroupName: `/aws/lambda/greenhouse-bot-scheduled`,
-      retention: RetentionDays.ONE_WEEK,
-      removalPolicy: RemovalPolicy.DESTROY,
-    });
-
     const playwrightLayer = props?.playwrightLayerArn
       ? LayerVersion.fromLayerVersionArn(this, 'PlaywrightLayer', props.playwrightLayerArn)
       : undefined;
 
-    const greenhouseBotFunction = new Function(this, 'GreenhouseBotFunction', {
-      runtime: Runtime.NODEJS_20_X,
-      handler: 'dist/bot/index.runWithStats',
-      code: Code.fromAsset(path.join(__dirname, '../../'), {
-        exclude: [
-          'node_modules',
-          'cdk/node_modules',
-          'cdk/cdk.out',
-          '*.ts',
-          '*.ts.map',
-          '*.d.ts',
-          '!dist/**/*',
-          '.git',
-          '.gitignore',
-          '*.md',
-          'failed-*.json',
-          'frontend/**/*',
-          'src/**/*',
-        ],
-      }),
+    const greenhouseBotFunction = new NodejsFunction(this, 'GreenhouseBotFunction', {
+      runtime: Runtime.NODEJS_22_X,
+      entry: path.join(__dirname, '../../src/bot/index.ts'),
+      handler: 'runWithStats',
       timeout: Duration.seconds(timeout),
       memorySize: memorySize,
-      logGroup,
+      logRetention: RetentionDays.ONE_WEEK,
+      bundling: {
+        format: OutputFormat.ESM,
+        target: 'node22',
+        sourceMap: true,
+        minify: true,
+        externalModules: ['playwright'],
+      },
       environment: {
         JOBS_SEARCH_URL_ONE_DAY: jobsSearchUrlOneDay,
         CONTEXT_BUCKET_NAME: contextBucket.bucketName,
@@ -141,14 +123,11 @@ export class GreenhouseBotStack extends Stack {
       layers: playwrightLayer ? [playwrightLayer] : undefined,
     });
 
-    // Grant permissions
     contextBucket.grantReadWrite(greenhouseBotFunction);
     
-    // Grant DynamoDB permissions
     if (isNewTable) {
       (failedJobsTable as Table).grantReadWriteData(greenhouseBotFunction);
     } else {
-      // For imported tables, grant permissions manually
       greenhouseBotFunction.addToRolePolicy(
         new PolicyStatement({
           effect: Effect.ALLOW,
@@ -165,8 +144,6 @@ export class GreenhouseBotStack extends Stack {
       );
     }
 
-
-    // EventBridge Rule for scheduled execution
     const rule = new Rule(this, 'GreenhouseBotSchedule', {
       schedule: Schedule.expression(scheduleExpression),
       enabled: true,
@@ -182,7 +159,6 @@ export class GreenhouseBotStack extends Stack {
       sourceArn: rule.ruleArn,
     });
 
-    // Outputs
     new CfnOutput(this, 'LambdaFunctionArn', {
       value: greenhouseBotFunction.functionArn,
       description: 'Scheduled Bot Lambda Function ARN',
