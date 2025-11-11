@@ -54,7 +54,7 @@ export class GreenhouseAutoApplyBot {
   private failedApplications: Array<{ jobTitle: string; url: string; timestamp: string; reason: string }> = [];
 
   constructor() {
-    this.resumePath = process.env.RESUME_PATH || './resume.pdf';
+    this.resumePath = process.env.RESUME_PATH || path.join(__dirname, 'cv.html');
     this.coverLetterPath = process.env.COVER_LETTER_PATH || './cover-letter.txt';
     this.config = this.loadConfig();
     // Store browser context in a local directory
@@ -88,7 +88,7 @@ export class GreenhouseAutoApplyBot {
         jobFilters: {
           keywords: process.env.JOB_KEYWORDS
             ? process.env.JOB_KEYWORDS.split(',')
-            : ['software engineering', 'software engineer'],
+            : ['engineer', 'engineering'],
           departments: process.env.DEPARTMENTS
             ? process.env.DEPARTMENTS.split(',')
             : [],
@@ -194,8 +194,7 @@ export class GreenhouseAutoApplyBot {
         timeout: 10000,
       });
 
-      // Handle cookie modal immediately after page load
-      await this.handleCookieModal();
+      // Note: Cookie modal will be handled after clicking "View Job" button
 
       // Check if we're redirected to sign in page (means not logged in)
       const currentURL = this.page.url();
@@ -235,8 +234,7 @@ export class GreenhouseAutoApplyBot {
       waitUntil: 'networkidle',
     });
 
-    // Handle cookie modal immediately after page load
-    await this.handleCookieModal();
+    // Note: Cookie modal will be handled after clicking "View Job" button
 
     // Pre-fill email if available
     const email = this.config.personalInfo.email || 'hi@macandersonuche.dev';
@@ -264,8 +262,7 @@ export class GreenhouseAutoApplyBot {
           { timeout: 300000 } // 5 minutes timeout
         );
 
-        // Handle cookie modal after navigation
-        await this.handleCookieModal();
+        // Note: Cookie modal will be handled after clicking "View Job" button
 
         // Verify we're actually logged in by checking for jobs page content
         await this.page.waitForSelector('body', { timeout: 10000 });
@@ -295,7 +292,7 @@ export class GreenhouseAutoApplyBot {
     if (shouldNavigate) {
       console.log('🔍 Navigating to jobs page with search filters...');
       // Navigate directly to URL with query parameters from environment variable
-      const searchUrl = process.env.JOBS_SEARCH_URL || `${this.baseURL}/jobs?query=software%20engineer&date_posted=past_five_days&work_type[]=remote`;
+      const searchUrl = process.env.JOBS_SEARCH_URL || `${this.baseURL}/jobs?query=engineer&date_posted=past_five_days&work_type[]=remote`;
       console.log(`   📍 Using search URL: ${searchUrl}`);
       await this.page.goto(searchUrl, {
         waitUntil: 'networkidle',
@@ -303,10 +300,9 @@ export class GreenhouseAutoApplyBot {
       // Wait for page to load
       await this.page.waitForTimeout(1000);
 
-      // Handle cookie modal immediately after page load (before any other interactions)
-      await this.handleCookieModal();
+      // Note: Cookie modal will be handled after clicking "View Job" button
       
-      // Wait a bit more after handling cookie modal
+      // Wait a bit more
       await this.page.waitForTimeout(1000);
 
       // Load ALL jobs before extracting them
@@ -359,7 +355,7 @@ export class GreenhouseAutoApplyBot {
               const cardText = await cardElement.textContent();
               
               // Extract job title - usually the first large text or text containing "Engineer"
-              if (cardText && /software engineer/i.test(cardText)) {
+              if (cardText && /engineer/i.test(cardText)) {
                 // Try to get a more specific title by looking for headings or large text
                 const titleElement = await cardElement.$('h1, h2, h3, h4, [class*="title"], [class*="name"]').catch(() => null);
                 let title = '';
@@ -370,10 +366,10 @@ export class GreenhouseAutoApplyBot {
                 // Fallback: extract from card text (first line or text before company name)
                 if (!title) {
                   const lines = cardText.split('\n').map(l => l.trim()).filter(l => l);
-                  title = lines.find(line => /software engineer/i.test(line)) || lines[0] || cardText.split('\n')[0].trim();
+                  title = lines.find(line => /engineer/i.test(line)) || lines[0] || cardText.split('\n')[0].trim();
                 }
                 
-                if (title && /software engineer/i.test(title)) {
+                if (title && /engineer/i.test(title)) {
                   jobElements.push({ 
                     title: title, 
                     viewButton: button 
@@ -391,9 +387,9 @@ export class GreenhouseAutoApplyBot {
                 const parentElement = parentHandle?.asElement();
                 if (parentElement) {
                   const parentText = await parentElement.textContent();
-                  if (parentText && /software engineer/i.test(parentText)) {
+                  if (parentText && /engineer/i.test(parentText)) {
                     const lines = parentText.split('\n').filter(l => l.trim());
-                    const title = lines.find(l => /software engineer/i.test(l)) || lines[0];
+                    const title = lines.find(l => /engineer/i.test(l)) || lines[0];
                     if (title) {
                       jobElements.push({ title: title.trim(), viewButton: button });
                     }
@@ -427,7 +423,7 @@ export class GreenhouseAutoApplyBot {
               for (const card of foundCards) {
                 try {
                   const cardText = await card.textContent();
-                  if (cardText && /software engineer/i.test(cardText)) {
+                  if (cardText && /engineer/i.test(cardText)) {
                     // Find view job button in this card
                     const viewButton = await card.$('button:has-text("View job"), a:has-text("View job"), button:has-text("View Job"), a:has-text("View Job")');
                     if (viewButton) {
@@ -435,7 +431,7 @@ export class GreenhouseAutoApplyBot {
                       const titleElement = await card.$('h1, h2, h3, h4, [class*="title"]');
                       const title = titleElement 
                         ? (await titleElement.textContent())?.trim() || ''
-                        : cardText.split('\n').find(line => /software engineer/i.test(line)) || cardText.split('\n')[0].trim();
+                        : cardText.split('\n').find(line => /engineer/i.test(line)) || cardText.split('\n')[0].trim();
                       
                       if (title) {
                         jobElements.push({ title, viewButton });
@@ -455,7 +451,7 @@ export class GreenhouseAutoApplyBot {
         }
       }
 
-      console.log(`✅ Found ${jobElements.length} jobs matching "software engineer"`);
+      console.log(`✅ Found ${jobElements.length} jobs matching "engineer"`);
     } catch (error) {
       console.error('❌ Error finding job listings:', error);
       console.log('   Current page URL:', this.page.url());
@@ -498,8 +494,8 @@ export class GreenhouseAutoApplyBot {
         try {
           const titleInput = await this.page.$(selector);
           if (titleInput) {
-            await titleInput.fill('software engineer');
-            console.log('   ✅ Filled job title: software engineer');
+            await titleInput.fill('engineer');
+            console.log('   ✅ Filled job title: engineer');
             titleFilled = true;
             break;
           }
@@ -816,6 +812,96 @@ export class GreenhouseAutoApplyBot {
   }
 
   /**
+   * Check if submission was successful by looking for success indicators on the page
+   * @returns Promise<boolean> - true if success indicators are found
+   */
+  private async checkSubmissionSuccess(): Promise<boolean> {
+    if (!this.page) {
+      return false;
+    }
+
+    try {
+      // Get page content to check for success messages
+      const pageContent = await this.page.content();
+      const pageText = await this.page.textContent('body').catch(() => null) || '';
+      
+      // Check for LINQ-specific success message
+      const linqSuccessIndicators = [
+        /thanks a ton for applying/i,
+        /join the LINQ team/i,
+        /super excited/i,
+        /talent acquisition team/i,
+        /we're currently reviewing/i,
+        /we'll be in touch soon/i,
+      ];
+      
+      const hasLinqSuccess = linqSuccessIndicators.some(pattern => 
+        pattern.test(pageContent) || (pageText && pattern.test(pageText))
+      );
+      
+      if (hasLinqSuccess) {
+        console.log('   ✅ Found LINQ success message on page');
+        return true;
+      }
+      
+      // Check for generic success indicators
+      const genericSuccessIndicators = [
+        /success/i,
+        /submitted/i,
+        /thank you/i,
+        /application received/i,
+        /thanks for applying/i,
+      ];
+      
+      const hasGenericSuccess = genericSuccessIndicators.some(pattern => 
+        pattern.test(pageContent) || (pageText && pattern.test(pageText))
+      );
+      
+      return hasGenericSuccess;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Wait for submission success confirmation with various indicators
+   * @param timeoutMs - Maximum time to wait in milliseconds
+   * @returns Promise<boolean> - true if success is confirmed
+   */
+  private async waitForSubmissionSuccess(timeoutMs: number = 60000): Promise<boolean> {
+    if (!this.page) {
+      return false;
+    }
+
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeoutMs) {
+      // Check for success using helper method
+      if (await this.checkSubmissionSuccess()) {
+        return true;
+      }
+      
+      // Also check for success selectors
+      try {
+        await Promise.race([
+          this.page.waitForSelector('text=/success|submitted|thank you|application received|thanks a ton|LINQ team/i', { timeout: 2000 }).then(() => true),
+          this.page.waitForSelector('[class*="success"]', { timeout: 2000 }).then(() => true),
+          this.page.waitForSelector('[class*="submitted"]', { timeout: 2000 }).then(() => true),
+          this.page.waitForURL(/success|submitted|thank/i, { timeout: 2000 }).then(() => true),
+        ]);
+        return true;
+      } catch (e) {
+        // Continue checking
+      }
+      
+      await this.page.waitForTimeout(1000);
+    }
+    
+    // Final check
+    return await this.checkSubmissionSuccess();
+  }
+
+  /**
    * Core job application logic - extracted for reuse
    * @param jobTitle - Job title for logging and tracking
    * @returns Promise<boolean> - true if application was successful, false otherwise
@@ -1094,8 +1180,8 @@ export class GreenhouseAutoApplyBot {
       // Fill required text boxes using OpenAI
       await this.fillRequiredTextFields();
 
-      // Check and tick all required checkboxes and multi-select options
-      console.log('   ☑️  Checking required checkboxes and multi-select options...');
+      // Check and tick all required checkboxes and dropdowns
+      console.log('   ☑️  Checking required checkboxes and dropdowns...');
       try {
         const checkboxSelectors = [
           'input[type="checkbox"][required]',
@@ -1130,35 +1216,443 @@ export class GreenhouseAutoApplyBot {
           }
         }
 
-        // Handle multi-select dropdowns - select "yes" or positive options
-        console.log('   📋 Checking multi-select options...');
-        const multiSelectSelectors = [
-          'select[multiple]',
-          'select[class*="multi"]',
+        // Handle ALL dropdowns (both native select and custom dropdowns) - use basic matching first, then AI if needed
+        console.log('   📋 Checking all dropdown selects...');
+        
+        // First, handle native <select> elements
+        const nativeSelects = await this.page.$$('select');
+        for (const select of nativeSelects) {
+          try {
+            // Extract question/label for this dropdown
+            const fieldInfo = await select.evaluate((el) => {
+              const selectEl = el as HTMLSelectElement;
+              const id = selectEl.id;
+              const name = selectEl.name;
+              
+              // Find label
+              let labelText = '';
+              if (id) {
+                const label = document.querySelector(`label[for="${id}"]`);
+                if (label) {
+                  labelText = label.textContent?.trim() || '';
+                }
+              }
+              if (!labelText) {
+                const parentLabel = selectEl.closest('label');
+                if (parentLabel) {
+                  labelText = parentLabel.textContent?.trim() || '';
+                }
+              }
+              if (!labelText) {
+                const prevLabel = selectEl.previousElementSibling;
+                if (prevLabel && prevLabel.tagName === 'LABEL') {
+                  labelText = prevLabel.textContent?.trim() || '';
+                }
+              }
+              // Try to find label in parent container
+              if (!labelText) {
+                const parent = selectEl.parentElement;
+                if (parent) {
+                  const labelInParent = parent.querySelector('label');
+                  if (labelInParent) {
+                    labelText = labelInParent.textContent?.trim() || '';
+                  }
+                }
+              }
+
+              return {
+                id,
+                name,
+                label: labelText,
+              };
+            });
+
+            const questionText = fieldInfo.label || fieldInfo.name || 'dropdown question';
+            
+            // Skip common fields that are usually already filled (no need to process or pass to AI)
+            const isCommonField = /^(first\s*name|last\s*name|email|phone|country)$/i.test(questionText) ||
+              (fieldInfo.id && /^(first|last|email|phone|country)/i.test(fieldInfo.id)) ||
+              (fieldInfo.name && /^(first|last|email|phone|country)/i.test(fieldInfo.name));
+            
+            if (isCommonField) {
+              console.log(`   ⏭️  Skipping common field (should already be filled): ${questionText}`);
+              continue;
+            }
+            
+            // Skip country-related dropdowns as they should already be filled
+            const isCountryField = 
+              /country|nation|location\s*$/i.test(questionText) ||
+              (fieldInfo.id && /country|nation/i.test(fieldInfo.id)) ||
+              (fieldInfo.name && /country|nation/i.test(fieldInfo.name));
+            
+            if (isCountryField) {
+              console.log(`   ⏭️  Skipping country dropdown (should already be filled): ${questionText}`);
+              continue;
+            }
+            
+            // Check if already has a value selected (before clicking)
+            const currentValue = await select.evaluate((el: HTMLSelectElement) => {
+              const value = el.value;
+              const selectedOption = el.options[el.selectedIndex];
+              const selectedText = selectedOption ? selectedOption.textContent?.trim() : '';
+              return { value, selectedText };
+            });
+            
+            // Skip if already filled (has a valid value and not a placeholder)
+            if (currentValue.value && 
+                currentValue.value !== '' && 
+                currentValue.value !== '0' && 
+                currentValue.value !== '-1' &&
+                currentValue.selectedText &&
+                !/select|choose|please|--|none|empty|^$|^\s*$/i.test(currentValue.selectedText)) {
+              console.log(`   ⏭️  Skipping dropdown (already filled): ${questionText} = ${currentValue.selectedText}`);
+              continue;
+            }
+            
+            // Always click into dropdown first
+            try {
+              await select.click();
+              await this.page.waitForTimeout(300);
+              console.log(`   ✅ Clicked into native dropdown: ${questionText}`);
+            } catch (e) {
+              // Continue even if click fails
+            }
+            
+            // Get all options
+            const options = await select.$$eval('option', (opts) =>
+              opts.map((opt) => ({ 
+                value: opt.value, 
+                text: opt.textContent?.trim() || '',
+                index: opt.index
+              }))
+            );
+            
+            // Skip empty/placeholder options
+            const validOptions = options.filter(opt => 
+              opt.value && 
+              opt.value !== '' && 
+              opt.value !== '0' && 
+              opt.value !== '-1' &&
+              !/select|choose|please|--|none|empty|^$|^\s*$/.test(opt.text)
+            );
+            
+            if (validOptions.length === 0) {
+              continue;
+            }
+            
+            // Try basic matching first (no AI needed)
+            let optionToSelect: { value: string; text: string } | null = null;
+            let usedAI = false;
+            const basicMatchValue = this.getBasicDropdownAnswer(questionText, validOptions);
+            
+            if (basicMatchValue) {
+              // Found a basic match
+              optionToSelect = validOptions.find(opt => opt.value === basicMatchValue) || null;
+            } else {
+              // Use AI only if basic matching didn't work
+              usedAI = true;
+              console.log(`   🤖 Analyzing question with AI: ${questionText}`);
+              const aiAnswer = await this.generateYesNoAnswer(questionText);
+              console.log(`   💡 AI determined answer: ${aiAnswer}`);
+              
+              // Look for matching option (yes or no) in dropdown
+              const matchingOption = validOptions.find(opt => {
+                const optTextLower = opt.text.toLowerCase();
+                const optValueLower = opt.value.toLowerCase();
+                
+                if (aiAnswer === 'yes') {
+                  return /^yes$/i.test(optTextLower) || 
+                         /^yes$/i.test(optValueLower) ||
+                         /^y$/i.test(optTextLower) ||
+                         /^y$/i.test(optValueLower) ||
+                         /\byes\b/i.test(optTextLower);
+                } else {
+                  return /^no$/i.test(optTextLower) || 
+                         /^no$/i.test(optValueLower) ||
+                         /^n$/i.test(optTextLower) ||
+                         /^n$/i.test(optValueLower) ||
+                         /\bno\b/i.test(optTextLower);
+                }
+              });
+              
+              optionToSelect = matchingOption || validOptions[0];
+            }
+            
+            if (optionToSelect && optionToSelect.value) {
+              // Skip if already selected
+              if (currentValue.value === optionToSelect.value) {
+                console.log(`   ℹ️  Dropdown already has "${optionToSelect.text}" selected`);
+                continue;
+              }
+              
+              // Try multiple methods to select
+              try {
+                await select.selectOption(optionToSelect.value);
+                console.log(`   ✅ Selected option: ${optionToSelect.text}${usedAI ? ` (AI)` : ` (basic match)`}`);
+              } catch (e) {
+                // Fallback: use JavaScript to set value
+                try {
+                  await select.evaluate((el: HTMLSelectElement, val: string) => {
+                    el.value = val;
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                  }, optionToSelect.value);
+                  console.log(`   ✅ Selected option via JS: ${optionToSelect.text}${usedAI ? ` (AI)` : ` (basic match)`}`);
+                } catch (e2) {
+                  // Last resort: click and select
+                  try {
+                    await select.click();
+                    await this.page.waitForTimeout(300);
+                    const optionElement = await select.$(`option[value="${optionToSelect.value}"]`);
+                    if (optionElement) {
+                      await optionElement.click();
+                      console.log(`   ✅ Selected option via click: ${optionToSelect.text}${usedAI ? ` (AI)` : ` (basic match)`}`);
+                    }
+                  } catch (e3) {
+                    console.warn(`   ⚠️  Could not select option: ${optionToSelect.text}`);
+                  }
+                }
+              }
+              await this.page.waitForTimeout(500);
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+
+        // Now handle custom dropdowns (divs/buttons with "Select..." text or similar)
+        console.log('   📋 Checking custom dropdowns...');
+        
+        // Find custom dropdown triggers (buttons/divs that contain "Select" or are near required fields)
+        const customDropdownSelectors = [
+          'button:has-text("Select")',
+          'button:has-text("Select...")',
+          'div:has-text("Select")',
+          'div:has-text("Select...")',
+          '[role="button"]:has-text("Select")',
+          '[role="combobox"]',
+          '[aria-haspopup="listbox"]',
+          'button[aria-expanded]',
+          'div[aria-expanded]',
         ];
 
-        for (const selector of multiSelectSelectors) {
+        // Also find elements near required labels
+        const requiredLabels = await this.page.$$('label:has-text("*"), label[class*="required"], label[aria-required="true"]');
+        for (const label of requiredLabels) {
           try {
-            const selects = await this.page.$$(selector);
-            for (const select of selects) {
+            const labelText = await label.textContent();
+            if (!labelText || !labelText.includes('*')) continue;
+            
+            // Find associated dropdown trigger (button/div after the label)
+            const labelId = await label.getAttribute('for');
+            let dropdownTrigger = null;
+            
+            if (labelId) {
+              // Try to find element with matching id
+              dropdownTrigger = await this.page.$(`#${labelId}, [id="${labelId}"]`).catch(() => null);
+            }
+            
+            // If not found, look for button/div in the same container or after the label
+            if (!dropdownTrigger) {
+              const parent = await label.evaluateHandle((el) => el.parentElement);
+              if (parent) {
+                dropdownTrigger = await parent.asElement()?.$('button, div[role="button"], div[role="combobox"], [aria-haspopup="listbox"]').catch(() => null);
+              }
+            }
+            
+            // Try finding element after label
+            if (!dropdownTrigger) {
+              dropdownTrigger = await label.evaluateHandle((el) => {
+                let next = el.nextElementSibling;
+                while (next) {
+                  if (next.tagName === 'BUTTON' || 
+                      next.getAttribute('role') === 'button' || 
+                      next.getAttribute('role') === 'combobox' ||
+                      next.getAttribute('aria-haspopup') === 'listbox') {
+                    return next;
+                  }
+                  next = next.nextElementSibling;
+                }
+                return null;
+              }).then(handle => handle?.asElement()).catch(() => null);
+            }
+            
+            if (dropdownTrigger) {
               try {
-                const options = await select.$$eval('option', (opts) =>
-                  opts.map((opt) => ({ value: opt.value, text: opt.textContent?.trim() || '' }))
-                );
+                const triggerText = await dropdownTrigger.textContent();
+                const trimmedTriggerText = triggerText ? triggerText.trim() : '';
+                const isSelectPlaceholder = trimmedTriggerText && (/select/i.test(trimmedTriggerText) || trimmedTriggerText === '');
                 
-                // Find "yes" or positive options
-                const positiveOption = options.find((opt) => 
-                  /yes|agree|accept|true|available|eligible/i.test(opt.text) ||
-                  /yes|agree|accept|true|available|eligible/i.test(opt.value)
-                );
+                // Extract question text from label
+                const questionText = labelText.replace(/\*/g, '').trim();
                 
-                if (positiveOption && positiveOption.value) {
-                  await select.selectOption(positiveOption.value);
-                  console.log(`   ✅ Selected positive option: ${positiveOption.text}`);
+                // Skip common fields that are usually already filled (no need to process or pass to AI)
+                const isCommonField = /^(first\s*name|last\s*name|email|phone|country)$/i.test(questionText);
+                
+                if (isCommonField) {
+                  console.log(`   ⏭️  Skipping common field (should already be filled): ${questionText}`);
+                  continue;
+                }
+                
+                // Check if this is a country-related dropdown (should already be filled)
+                const dropdownId = await dropdownTrigger.getAttribute('id').catch(() => null);
+                const dropdownName = await dropdownTrigger.getAttribute('name').catch(() => null);
+                const dropdownClass = await dropdownTrigger.getAttribute('class').catch(() => null);
+                
+                const isCountryField = 
+                  /country|nation|location\s*$/i.test(questionText) ||
+                  (dropdownId && /country|nation/i.test(dropdownId)) ||
+                  (dropdownName && /country|nation/i.test(dropdownName)) ||
+                  (dropdownClass && /country|nation/i.test(dropdownClass)) ||
+                  (trimmedTriggerText && /country|nation/i.test(trimmedTriggerText));
+                
+                if (isCountryField) {
+                  console.log(`   ⏭️  Skipping country dropdown (should already be filled): ${questionText}`);
+                  continue;
+                }
+                
+                // Skip if already filled (has a value that's not "Select..." or empty)
+                if (!isSelectPlaceholder && trimmedTriggerText && trimmedTriggerText !== '') {
+                  // Check if it's not a placeholder value
+                  const isPlaceholderValue = /select|choose|please|--|none|empty/i.test(trimmedTriggerText);
+                  if (!isPlaceholderValue) {
+                    console.log(`   ⏭️  Skipping custom dropdown (already filled): ${questionText} = ${trimmedTriggerText}`);
+                    continue;
+                  }
+                }
+                
+                // Only process if it's a placeholder or empty
+                if (!isSelectPlaceholder && trimmedTriggerText !== '') {
+                  continue; // Skip if it has some value that we don't recognize
+                }
+                
+                console.log(`   🔍 Found custom dropdown for: ${questionText}`);
+                
+                // Scroll into view
+                await dropdownTrigger.scrollIntoViewIfNeeded().catch(() => {});
+                await this.page.waitForTimeout(200);
+                
+                // Click to open dropdown
+                try {
+                  await dropdownTrigger.click({ timeout: 2000 });
                   await this.page.waitForTimeout(500);
+                  console.log(`   ✅ Clicked custom dropdown: ${questionText}`);
+                } catch (e) {
+                  // Try force click
+                  try {
+                    await dropdownTrigger.click({ force: true, timeout: 2000 });
+                    await this.page.waitForTimeout(500);
+                    console.log(`   ✅ Clicked custom dropdown (force): ${questionText}`);
+                  } catch (e2) {
+                    console.warn(`   ⚠️  Could not click custom dropdown: ${questionText}, skipping...`);
+                    continue; // Skip this dropdown if we couldn't click it
+                  }
+                }
+                
+                // Find options in the opened dropdown menu
+                const optionSelectors = [
+                  '[role="option"]',
+                  '[role="menuitem"]',
+                  'li[role="option"]',
+                  'div[role="option"]',
+                  '.dropdown-item',
+                  '[class*="option"]',
+                  '[class*="menu-item"]',
+                  'li',
+                  'div[data-value]',
+                ];
+                
+                // Collect all options first
+                const allOptions: Array<{ element: any; text: string; value: string }> = [];
+                for (const optSelector of optionSelectors) {
+                  try {
+                    const options = await this.page.$$(optSelector);
+                    for (const option of options) {
+                      const optionText = await option.textContent();
+                      if (!optionText || optionText.trim() === '') continue;
+                      
+                      const dataValue = await option.getAttribute('data-value').catch(() => null);
+                      const value = dataValue || optionText.trim();
+                      
+                      allOptions.push({
+                        element: option,
+                        text: optionText.trim(),
+                        value: value,
+                      });
+                    }
+                  } catch (e) {
+                    continue;
+                  }
+                }
+                
+                if (allOptions.length === 0) {
+                  console.warn(`   ⚠️  No options found in custom dropdown: ${questionText}`);
+                  continue;
+                }
+                
+                // Try basic matching first (no AI needed)
+                const basicMatchValue = this.getBasicDropdownAnswer(questionText, allOptions.map(opt => ({ text: opt.text, value: opt.value })));
+                let selectedOption: any = null;
+                let selectedOptionText = '';
+                let usedAI = false;
+                
+                if (basicMatchValue) {
+                  // Found a basic match
+                  const matched = allOptions.find(opt => opt.value === basicMatchValue);
+                  if (matched) {
+                    selectedOption = matched.element;
+                    selectedOptionText = matched.text;
+                  }
+                } else {
+                  // Use AI only if basic matching didn't work
+                  usedAI = true;
+                  console.log(`   🤖 Analyzing question with AI: ${questionText}`);
+                  const aiAnswer = await this.generateYesNoAnswer(questionText);
+                  console.log(`   💡 AI determined answer: ${aiAnswer}`);
+                  
+                  // Find matching option
+                  for (const opt of allOptions) {
+                    const optTextLower = opt.text.toLowerCase().trim();
+                    const matches = aiAnswer === 'yes' 
+                      ? /^yes$/i.test(optTextLower) || /\byes\b/i.test(optTextLower)
+                      : /^no$/i.test(optTextLower) || /\bno\b/i.test(optTextLower);
+                    
+                    if (matches) {
+                      selectedOption = opt.element;
+                      selectedOptionText = opt.text;
+                      break;
+                    }
+                  }
+                  
+                  // If no exact match, try to find first option with yes/no
+                  if (!selectedOption) {
+                    for (const opt of allOptions) {
+                      const optTextLower = opt.text.toLowerCase().trim();
+                      if (/yes|no/i.test(optTextLower)) {
+                        selectedOption = opt.element;
+                        selectedOptionText = opt.text;
+                        break;
+                      }
+                    }
+                  }
+                }
+                
+                // Click the selected option
+                if (selectedOption) {
+                  try {
+                    await selectedOption.click({ timeout: 2000 });
+                    console.log(`   ✅ Selected custom dropdown option: ${selectedOptionText}${usedAI ? ` (AI answer)` : ` (basic match)`}`);
+                    await this.page.waitForTimeout(500);
+                  } catch (e) {
+                    // Try JavaScript click
+                    await selectedOption.evaluate((el: HTMLElement) => el.click());
+                    console.log(`   ✅ Selected custom dropdown option via JS: ${selectedOptionText}${usedAI ? ` (AI answer)` : ` (basic match)`}`);
+                    await this.page.waitForTimeout(500);
+                  }
+                } else {
+                  console.warn(`   ⚠️  Could not find matching option in custom dropdown: ${questionText}`);
                 }
               } catch (e) {
-                continue;
+                console.warn(`   ⚠️  Error handling custom dropdown: ${e}`);
               }
             }
           } catch (e) {
@@ -1197,6 +1691,23 @@ export class GreenhouseAutoApplyBot {
         }
       } catch (error) {
         console.warn('   ⚠️  Error checking checkboxes:', error);
+      }
+
+      // Scroll down to find submit button
+      console.log('   📜 Scrolling down to find submit button...');
+      try {
+        await this.page.evaluate(() => {
+          window.scrollTo(0, document.body.scrollHeight);
+        });
+        await this.page.waitForTimeout(1000);
+        
+        // Scroll back up a bit to ensure button is visible
+        await this.page.evaluate(() => {
+          window.scrollBy(0, -200);
+        });
+        await this.page.waitForTimeout(500);
+      } catch (e) {
+        // Continue even if scrolling fails
       }
 
       // Find and click the submit button
@@ -1360,32 +1871,87 @@ export class GreenhouseAutoApplyBot {
       let submissionSuccessful = false;
       
       if (!submitButton) {
-        console.log('   ⚠️  Submit button not found, form may auto-submit or need manual submission');
-        // Wait a bit more in case form auto-submits
-        await this.page.waitForTimeout(3000);
+        console.warn('   ⚠️  Submit button not found, trying to fill required inputs and retry...');
         
-        // Check if form auto-submitted by looking for success indicators
+        // Try to fill any required inputs that might be missing
         try {
-          const successIndicators = await Promise.race([
-            this.page.waitForSelector('text=/success|submitted|thank you|application received/i', { timeout: 5000 }).then(() => true),
-            this.page.waitForSelector('[class*="success"]', { timeout: 5000 }).then(() => true),
-            this.page.waitForSelector('[class*="submitted"]', { timeout: 5000 }).then(() => true),
-            this.page.waitForURL(/success|submitted|thank/i, { timeout: 5000 }).then(() => true),
-            Promise.resolve(false),
-          ]);
-          
-          if (successIndicators) {
-            submissionSuccessful = true;
-            console.log('   ✅ Application auto-submitted successfully');
-          } else {
-            console.log('   ⚠️  Could not confirm auto-submission, assuming success');
-            submissionSuccessful = true; // Assume success if no submit button found
+          const requiredInputs = await this.page.$$('input[required]:not([value]), textarea[required]:not([value]), select[required]');
+          for (const input of requiredInputs.slice(0, 5)) {
+            try {
+              const tagName = await input.evaluate((el) => el.tagName.toLowerCase());
+              if (tagName === 'select') {
+                // Already handled in dropdown section, but try clicking again
+                await input.click();
+                await this.page.waitForTimeout(300);
+              } else {
+                // Try clicking into text inputs
+                await input.click();
+                await this.page.waitForTimeout(300);
+              }
+            } catch (e) {
+              continue;
+            }
           }
-        } catch (error) {
-          console.warn('   ⚠️  Could not confirm auto-submission');
-          submissionSuccessful = true; // Assume success
+        } catch (e) {
+          // Continue even if filling fails
         }
-      } else {
+        
+        const autofillTriggered = await triggerAutofill();
+        if (autofillTriggered) {
+          // Wait a bit for form to update
+          await this.page.waitForTimeout(2000);
+        }
+        
+        // Scroll down again to find submit button
+        try {
+          await this.page.evaluate(() => {
+            window.scrollTo(0, document.body.scrollHeight);
+          });
+          await this.page.waitForTimeout(1000);
+        } catch (e) {
+          // Continue even if scrolling fails
+        }
+        
+        // Try finding submit button again
+        for (const selector of submitSelectors) {
+          try {
+            submitButton = await this.page.$(selector);
+            if (submitButton) {
+              const buttonText = await submitButton.textContent();
+              console.log(`   ✅ Found submit button after filling required inputs: ${buttonText?.trim()}`);
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (!submitButton) {
+          console.log('   ⚠️  Submit button still not found, form may auto-submit or need manual submission');
+          // Wait a bit more in case form auto-submits
+          await this.page.waitForTimeout(3000);
+          
+          // Check if form auto-submitted by looking for success indicators
+          try {
+            const successConfirmed = await this.waitForSubmissionSuccess(5000);
+            
+            if (successConfirmed) {
+              submissionSuccessful = true;
+              console.log('   ✅ Application auto-submitted successfully');
+            } else {
+              console.log('   ⚠️  Could not confirm auto-submission, assuming success');
+              submissionSuccessful = true; // Assume success if no submit button found
+            }
+          } catch (error) {
+            console.warn('   ⚠️  Could not confirm auto-submission');
+            submissionSuccessful = true; // Assume success
+          }
+        } else {
+          // Found submit button after retry, continue to click it below
+        }
+      }
+      
+      if (submitButton) {
         // Click submit button
         console.log('   📤 Clicking submit button...');
         await submitButton.click();
@@ -1397,19 +1963,13 @@ export class GreenhouseAutoApplyBot {
         const timeoutMs = 60000; // 1 minute
         
         try {
-          // Look for success indicators with timeout
-          const successPromise = Promise.race([
-            this.page.waitForSelector('text=/success|submitted|thank you|application received/i', { timeout: timeoutMs }),
-            this.page.waitForSelector('[class*="success"]', { timeout: timeoutMs }),
-            this.page.waitForSelector('[class*="submitted"]', { timeout: timeoutMs }),
-            this.page.waitForURL(/success|submitted|thank/i, { timeout: timeoutMs }),
-          ]);
-
-          await successPromise;
+          // Use helper method to wait for success confirmation
+          submissionSuccessful = await this.waitForSubmissionSuccess(timeoutMs);
           
-          await this.page.waitForTimeout(2000);
-          submissionSuccessful = true;
-          console.log('   ✅ Application submitted successfully');
+          if (submissionSuccessful) {
+            await this.page.waitForTimeout(2000);
+            console.log('   ✅ Application submitted successfully');
+          }
         } catch (error) {
           const elapsedTime = Date.now() - submissionStartTime;
           
@@ -1434,13 +1994,11 @@ export class GreenhouseAutoApplyBot {
                   
                   // Check again for success
                   try {
-                    await Promise.race([
-                      this.page.waitForSelector('text=/success|submitted|thank you|application received/i', { timeout: 10000 }),
-                      this.page.waitForSelector('[class*="success"]', { timeout: 10000 }),
-                      this.page.waitForSelector('[class*="submitted"]', { timeout: 10000 }),
-                    ]);
-                    submissionSuccessful = true;
-                    console.log('   ✅ Application submitted successfully after auto-fill');
+                    const retrySuccess = await this.waitForSubmissionSuccess(10000);
+                    if (retrySuccess) {
+                      submissionSuccessful = true;
+                      console.log('   ✅ Application submitted successfully after auto-fill');
+                    }
                   } catch (e) {
                     // Still didn't work
                   }
@@ -1822,17 +2380,56 @@ export class GreenhouseAutoApplyBot {
     }
 
     try {
+      // Read and extract text content from CV HTML
+      const cvPath = path.join(__dirname, 'cv.html');
+      let cvContent = '';
+      
+      try {
+        const htmlContent = await fs.readFile(cvPath, 'utf-8');
+        
+        // Extract text content from HTML (remove HTML tags and scripts)
+        // Simple approach: remove script and style tags, then extract text
+        cvContent = htmlContent
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // Remove script tags
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // Remove style tags
+          .replace(/<[^>]+>/g, ' ') // Remove all HTML tags
+          .replace(/&nbsp;/g, ' ') // Replace &nbsp; with space
+          .replace(/&amp;/g, '&') // Replace &amp; with &
+          .replace(/&lt;/g, '<') // Replace &lt; with <
+          .replace(/&gt;/g, '>') // Replace &gt; with >
+          .replace(/&quot;/g, '"') // Replace &quot; with "
+          .replace(/&#39;/g, "'") // Replace &#39; with '
+          .replace(/\s+/g, ' ') // Replace multiple whitespace with single space
+          .trim();
+        
+        // Limit to reasonable length
+        if (cvContent.length > 10000) {
+          console.warn(`   ⚠️  CV content is very long (${cvContent.length} chars), truncating to 10000 chars`);
+          cvContent = cvContent.substring(0, 10000) + '...';
+        }
+        
+        console.log(`   📄 Extracted ${cvContent.length} characters from CV HTML`);
+      } catch (error) {
+        console.warn(`   ⚠️  Could not read CV HTML: ${error}`);
+        // Fallback: continue without CV content
+      }
+
       const systemPrompt = `You are a helpful assistant that helps fill out job application forms. 
 Generate concise, professional answers based on the candidate's information.
+
+CV/Resume content:
+${cvContent}
 
 Work Authorization Information:
 - British citizen
 - Can work anywhere (globally)
-- Requires sponsorship to work in the United States
+- Does NOT require sponsorship for jobs based in the UK
+- Requires sponsorship to work in the United States (for non-UK positions)
+- NOT a former employee or contractor
 
 Keep answers brief (1-3 sentences for most questions, up to 100 words for longer responses).
-Be professional and relevant to the question asked.
-For work authorization questions, mention that you are a British citizen who can work anywhere but require sponsorship for US positions.`;
+Be professional and relevant to the question asked. Use information from the CV to answer questions about experience, skills, and background.
+For work authorization questions, mention that you are a British citizen who does not require sponsorship for UK-based positions, but would require sponsorship for US positions.`;
 
       const userPrompt = `Field type: ${fieldType}
 Question/Label: ${question}
@@ -1845,11 +2442,17 @@ Generate an appropriate answer for this job application field.`;
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        max_tokens: 150,
+        max_tokens: 100, // Reduced from 150 to keep responses shorter
         temperature: 0.7,
       });
 
-      const answer = completion.choices[0]?.message?.content?.trim() || '';
+      let answer = completion.choices[0]?.message?.content?.trim() || '';
+      
+      // Limit answer length to 200 characters to prevent overly long responses
+      if (answer.length > 200) {
+        answer = answer.substring(0, 197) + '...';
+        console.log(`   ⚠️  Truncated answer to 200 characters`);
+      }
       
       // Check if the response is uncertain or unclear
       if (!answer) {
@@ -1892,6 +2495,179 @@ Generate an appropriate answer for this job application field.`;
     } catch (error) {
       console.warn(`   ⚠️  Error generating answer with OpenAI: ${error}`);
       return 'Not available';
+    }
+  }
+
+  /**
+   * Basic matching for common dropdown questions without using AI
+   * Returns the answer if matched, null if AI is needed
+   */
+  private getBasicDropdownAnswer(question: string, options: Array<{ text: string; value: string }>): string | null {
+    const questionLower = question.toLowerCase();
+    
+    // Gender questions - select "man" or "male"
+    if (/gender|sex|title\s*\(mr|mrs|ms\)/i.test(question)) {
+      const maleOption = options.find(opt => 
+        /^male$|^man$|^m$|^mr\.?$/i.test(opt.text.trim()) ||
+        /male|man|mr/i.test(opt.text.toLowerCase())
+      );
+      if (maleOption) {
+        console.log(`   ✅ Basic match: Gender -> ${maleOption.text}`);
+        return maleOption.value;
+      }
+    }
+    
+    // Location/Country - select UK
+    if (/location|country|nation|where do you live|reside/i.test(question)) {
+      const ukOption = options.find(opt => 
+        /^uk$|^united kingdom$|^great britain$|^gb$|^england$|^scotland$|^wales$/i.test(opt.text.trim()) ||
+        /united kingdom|great britain|^uk\b/i.test(opt.text.toLowerCase())
+      );
+      if (ukOption) {
+        console.log(`   ✅ Basic match: Location -> ${ukOption.text}`);
+        return ukOption.value;
+      }
+    }
+    
+    // Visa sponsorship questions
+    if (/visa|sponsorship|work authorization|work permit|require sponsorship/i.test(question)) {
+      // Check if question mentions UK specifically
+      const isUKQuestion = /uk|united kingdom|britain/i.test(question);
+      
+      if (isUKQuestion) {
+        // For UK: no sponsorship needed
+        const noOption = options.find(opt => 
+          /^no$/i.test(opt.text.trim()) || /^n$/i.test(opt.text.trim()) ||
+          /\bno\b/i.test(opt.text.toLowerCase())
+        );
+        if (noOption) {
+          console.log(`   ✅ Basic match: UK Visa -> ${noOption.text}`);
+          return noOption.value;
+        }
+      } else {
+        // For non-UK countries: yes, need sponsorship (default to yes for most US-based jobs)
+        const yesOption = options.find(opt => 
+          /^yes$/i.test(opt.text.trim()) || /^y$/i.test(opt.text.trim()) ||
+          /\byes\b/i.test(opt.text.toLowerCase())
+        );
+        if (yesOption) {
+          console.log(`   ✅ Basic match: Visa Sponsorship (non-UK) -> ${yesOption.text}`);
+          return yesOption.value;
+        }
+      }
+    }
+    
+    // Former employee questions - always "no"
+    if (/former|previous|ex-|prior employee|worked here before|contractor/i.test(question)) {
+      const noOption = options.find(opt => 
+        /^no$/i.test(opt.text.trim()) || /^n$/i.test(opt.text.trim()) ||
+        /\bno\b/i.test(opt.text.toLowerCase())
+      );
+      if (noOption) {
+        console.log(`   ✅ Basic match: Former Employee -> ${noOption.text}`);
+        return noOption.value;
+      }
+    }
+    
+    // Remote work - always "yes"
+    if (/remote|work from home|wfh|telecommute/i.test(question)) {
+      const yesOption = options.find(opt => 
+        /^yes$/i.test(opt.text.trim()) || /^y$/i.test(opt.text.trim()) ||
+        /\byes\b/i.test(opt.text.toLowerCase())
+      );
+      if (yesOption) {
+        console.log(`   ✅ Basic match: Remote Work -> ${yesOption.text}`);
+        return yesOption.value;
+      }
+    }
+    
+    // Return null to indicate AI should be used
+    return null;
+  }
+
+  async generateYesNoAnswer(question: string): Promise<'yes' | 'no'> {
+    if (!this.openai) {
+      return 'no'; // Default to "no" if OpenAI not available
+    }
+
+    try {
+      // Read and extract text content from CV HTML
+      const cvPath = path.join(__dirname, 'cv.html');
+      let cvContent = '';
+      
+      try {
+        const htmlContent = await fs.readFile(cvPath, 'utf-8');
+        cvContent = htmlContent
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/\s+/g, ' ')
+          .trim();
+        
+        if (cvContent.length > 10000) {
+          cvContent = cvContent.substring(0, 10000) + '...';
+        }
+      } catch (error) {
+        // Continue without CV content
+      }
+
+      const systemPrompt = `You are a helpful assistant that helps fill out job application forms.
+Answer questions with ONLY "yes" or "no" based on the candidate's information.
+
+CV/Resume content:
+${cvContent}
+
+Work Authorization Information:
+- British citizen
+- Can work anywhere (globally)
+- Does NOT require sponsorship for jobs based in the UK
+- Requires sponsorship to work in the United States (for non-UK positions)
+- NOT a former employee or contractor
+
+Answer "yes" if the statement/question is true for the candidate, "no" if it's false or not applicable.
+For example:
+- "Do you require sponsorship?" -> "no" (for UK positions) or "yes" (for US positions)
+- "Are you a former employee?" -> "no"
+- "Do you have 5+ years of experience?" -> Answer based on CV
+- "Can you work remotely?" -> "yes"
+
+Respond with ONLY the word "yes" or "no", nothing else.`;
+
+      const userPrompt = `Question/Label: ${question}
+
+Answer with ONLY "yes" or "no".`;
+
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 10,
+        temperature: 0.3, // Lower temperature for more consistent yes/no answers
+      });
+
+      const answer = completion.choices[0]?.message?.content?.trim().toLowerCase() || '';
+      
+      // Extract yes or no from the response
+      if (/^yes|^y\b/i.test(answer)) {
+        return 'yes';
+      } else if (/^no|^n\b/i.test(answer)) {
+        return 'no';
+      } else {
+        // If unclear, default to "no" for safety
+        console.log(`   ⚠️  AI response unclear ("${answer}"), defaulting to "no"`);
+        return 'no';
+      }
+    } catch (error) {
+      console.warn(`   ⚠️  Error generating yes/no answer with OpenAI: ${error}`);
+      return 'no'; // Default to "no" on error
     }
   }
 
@@ -2091,10 +2867,10 @@ Generate an appropriate answer for this job application field.`;
     }
   }
 
-  async readResume(): Promise<Buffer | null> {
+  async readResume(): Promise<string | null> {
     try {
       const resumePath = path.resolve(this.resumePath);
-      return await fs.readFile(resumePath);
+      return await fs.readFile(resumePath, 'utf-8');
     } catch (error) {
       console.error('❌ Error reading resume file:', error);
       return null;
@@ -2232,11 +3008,18 @@ Generate an appropriate answer for this job application field.`;
   }
 }
 
-// Run the bot
-const bot = new GreenhouseAutoApplyBot();
-bot.run().catch((error) => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
+// Only run the bot if this file is executed directly (not imported)
+// Don't auto-run if we're running test.ts or restart.ts
+const scriptPath = process.argv[1] || '';
+const isTestScript = scriptPath.includes('test.ts') || scriptPath.includes('restart.ts');
+const isMainModule = !isTestScript && (scriptPath.includes('index.ts') || scriptPath.includes('index.js') || scriptPath.endsWith('index'));
+
+if (isMainModule) {
+  const bot = new GreenhouseAutoApplyBot();
+  bot.run().catch((error) => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+  });
+}
 
 

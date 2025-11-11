@@ -7,35 +7,35 @@ A monorepo containing CLI and Lambda packages for automatically applying to Gree
 ```
 .
 ├── packages/
-│   ├── core/          # Shared bot logic
-│   ├── cli/           # CLI application (non-headless)
 │   └── lambda/        # AWS Lambda function (headless, EventBridge cron)
+├── src/               # Main bot logic (used by CLI and Lambda)
+│   ├── index.ts       # GreenhouseAutoApplyBot class
+│   ├── test.ts        # Test script for single job URL
+│   └── restart.ts     # Restart script for failed jobs
 ├── config.json        # Configuration file
-├── MacAndersonUcheCVAB.pdf  # Resume file
+├── src/cv.html        # Resume HTML file
 └── package.json       # Root package.json with workspaces
 ```
 
 ## Packages
 
-### @greenhouse-bot/core
-Shared bot logic used by both CLI and Lambda packages. Contains the `GreenhouseAutoApplyBot` class.
+### src/ (Main Bot Logic)
+Contains the `GreenhouseAutoApplyBot` class used by both CLI and Lambda. The bot logic is in `src/index.ts`.
 
-### @greenhouse-bot/cli
-CLI application that runs the bot in non-headless mode. Uses `JOBS_SEARCH_URL` from environment variables.
-
-**Usage:**
+**CLI Usage:**
 ```bash
 npm run start          # Run the bot
 npm run test:job <url> # Test applying to a specific job URL
+npm run restart        # Retry failed applications
 ```
 
 ### @greenhouse-bot/lambda
-AWS Lambda function that runs the bot in headless mode. Designed to be triggered by EventBridge cron. Uses `JOBS_SEARCH_URL_ONE_DAY` from environment variables.
+AWS Lambda function that runs the bot in headless mode. Designed to be triggered by EventBridge cron. Uses `JOBS_SEARCH_URL_ONE_DAY` from environment variables. Imports bot logic directly from `src/`.
 
 **Environment Variables:**
 - `JOBS_SEARCH_URL_ONE_DAY`: URL for jobs posted in the past day
 - `OPENAI_API_KEY`: OpenAI API key for text field auto-fill
-- `RESUME_PATH`: Path to resume PDF (default: `/opt/resume/MacAndersonUcheCVAB.pdf`)
+- `RESUME_PATH`: Path to resume HTML file (default: `/opt/resume/cv.html`)
 
 ## Setup
 
@@ -52,8 +52,8 @@ npm run playwright:install
 3. Configure environment variables in `.env`:
 ```env
 OPENAI_API_KEY=your_key_here
-JOBS_SEARCH_URL=https://my.greenhouse.io/jobs?query=software%20engineer&date_posted=past_five_days&work_type[]=remote
-JOBS_SEARCH_URL_ONE_DAY=https://my.greenhouse.io/jobs?query=software%20engineer%20&date_posted=past_day&work_type[]=remote
+JOBS_SEARCH_URL=https://my.greenhouse.io/jobs?query=engineer&date_posted=past_five_days&work_type[]=remote
+JOBS_SEARCH_URL_ONE_DAY=https://my.greenhouse.io/jobs?query=engineer&date_posted=past_day&work_type[]=remote
 ```
 
 4. Build all packages:

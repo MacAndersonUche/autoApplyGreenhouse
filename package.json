@@ -4,17 +4,18 @@
   "description": "Monorepo for Greenhouse auto-apply bot with CLI and Lambda packages",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "cdk/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "build:core": "npm run build --workspace=@greenhouse-bot/core",
     "build:lambda": "npm run build --workspace=@greenhouse-bot/lambda",
     "start": "npm run",
     "dev": "npm run:dev",
     "test:job": "tsx src/test.ts",
+    "test": "tsx src/test.ts",
+    "restart": "tsx src/restart.ts",
     "playwright:install": "playwright install chromium",
-    "install:all": "npm install && npm run build:core && npm run build:lambda",
+    "install:all": "npm install && npm run build:lambda",
     "run": "tsc && node dist/index.js",
     "run:dev": "tsx src/index.ts"
   },
@@ -30,10 +31,11 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.10.0",
-    "typescript": "^5.3.0",
-    "tsx": "^4.7.0"
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
   },
   "dependencies": {
+    "@aws-sdk/client-sqs": "^3.928.0",
     "dotenv": "^16.3.1",
     "openai": "^4.104.0",
     "playwright": "^1.40.0"

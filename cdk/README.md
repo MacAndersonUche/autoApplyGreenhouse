@@ -13,13 +13,7 @@ This package includes AWS CDK infrastructure code for easy deployment.
 npm install -g aws-cdk
 ```
 
-2. Build the core package first:
-```bash
-cd ../..
-npm run build:core
-```
-
-3. Build the lambda package:
+2. Build the lambda package:
 ```bash
 npm run build:lambda
 ```
@@ -121,7 +115,7 @@ The stack accepts the following configuration options:
 The Lambda function uses these environment variables:
 
 - `JOBS_SEARCH_URL_ONE_DAY`: Jobs search URL (set by CDK)
-- `RESUME_PATH`: Path to resume PDF (default: `/opt/resume/MacAndersonUcheCVAB.pdf`)
+- `RESUME_PATH`: Path to resume HTML file (default: `/opt/resume/cv.html`)
 - `OPENAI_SECRET_ARN`: ARN of OpenAI API key secret (if using Secrets Manager)
 
 ### Manual Lambda Package Deployment

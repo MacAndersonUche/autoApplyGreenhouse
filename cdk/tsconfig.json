@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": ".",
+    "composite": true,
+    "types": ["node", "aws-lambda"],
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*", "bin/**/*", "lib/**/*", "../dist/index.d.ts"],
+  "exclude": ["node_modules", "dist", "cdk.out"]
+}
