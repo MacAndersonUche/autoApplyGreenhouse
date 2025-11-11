@@ -8,6 +8,7 @@ import {
 import {
   Runtime,
   LayerVersion,
+  Code,
 } from 'aws-cdk-lib/aws-lambda';
 import {
   NodejsFunction,
@@ -99,9 +100,21 @@ export class GreenhouseBotStack extends Stack {
       }],
     });
 
-    const playwrightLayer = props?.playwrightLayerArn
-      ? LayerVersion.fromLayerVersionArn(this, 'PlaywrightLayer', props.playwrightLayerArn)
-      : undefined;
+    const playwrightLayer = new LayerVersion(this, 'PlaywrightLayer', {
+      code: Code.fromAsset(join(__dirname, '../layers/playwright'), {
+        bundling: {
+          image: Runtime.NODEJS_22_X.bundlingImage,
+          command: ['bash', '-c', [
+            'npm install',
+            'mkdir -p /asset-output/nodejs/node_modules',
+            'PLAYWRIGHT_BROWSERS_PATH=/asset-output/nodejs/node_modules/.cache/ms-playwright npx playwright install chromium',
+            'cp -R node_modules /asset-output/nodejs/',
+          ].join(' && ')],
+        },
+      }),
+      compatibleRuntimes: [Runtime.NODEJS_22_X],
+      description: 'Bundled Playwright Chromium layer',
+    });
 
     const greenhouseBotFunction = new NodejsFunction(this, 'GreenhouseBotFunction', {
       runtime: Runtime.NODEJS_22_X,
